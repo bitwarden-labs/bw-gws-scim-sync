@@ -74,11 +74,20 @@ class BitwardenScim:
             "emails": [{"value": email, "primary": True, "type": "work"}],
             "active": True,
         }
-        return self._call("POST", "/Users", json=body)["id"]
+        data = self._call("POST", "/Users", json=body)
+        if not data.get("id"):
+            raise ScimError(201, f"no member id returned for {email}")
+        return data["id"]
 
     def set_active(self, member_id: str, active: bool) -> None:
         body = {"schemas": [PATCH_SCHEMA],
                 "Operations": [{"op": "replace", "path": "active", "value": active}]}
+        self._call("PATCH", f"/Users/{member_id}", json=body)
+
+    def set_user_external_id(self, member_id: str, external_id: str) -> None:
+        # Bitwarden only handles "replace" for a member's externalId; "add" is silently ignored.
+        body = {"schemas": [PATCH_SCHEMA],
+                "Operations": [{"op": "replace", "path": "externalId", "value": external_id}]}
         self._call("PATCH", f"/Users/{member_id}", json=body)
 
     def delete_user(self, member_id: str) -> None:
@@ -97,29 +106,18 @@ class BitwardenScim:
     def patch_group(self, group_id: str, name: str, member_ids: list[str]) -> dict:
         """Update a group with PATCH operations instead of PUT.
 
-        If GET /Groups/{id} returns the current members, only the needed add/remove operations are
-        sent. Otherwise, membership is set with a single replace on "members". Returns a small
-        summary for logging.
+        Bitwarden's GET /Groups never returns members, so membership is always set with a single
+        replace on "members". Returns a small summary for logging.
         """
-        current = self._call("GET", f"/Groups/{group_id}")
-        ops: list[dict] = []
-        if current.get("displayName") != name:
-            ops.append({"op": "replace", "path": "displayName", "value": name})
+        ops = [
+            {"op": "replace", "path": "displayName", "value": name},
+            {"op": "replace", "path": "members", "value": [{"value": m} for m in sorted(set(member_ids))]},
+        ]
+        self._call("PATCH", f"/Groups/{group_id}", json={"schemas": [PATCH_SCHEMA], "Operations": ops})
+        return {"strategy": "patch"}
 
-        desired = set(member_ids)
-        if isinstance(current.get("members"), list):
-            have = {m.get("value") for m in current["members"] if m.get("value")}
-            add, remove = sorted(desired - have), sorted(have - desired)
-            if add:
-                ops.append({"op": "add", "path": "members", "value": [{"value": m} for m in add]})
-            ops += [{"op": "remove", "path": f'members[value eq "{m}"]'} for m in remove]
-            summary = {"strategy": "diff", "added": len(add), "removed": len(remove)}
-        else:
-            ops.append({"op": "replace", "path": "members",
-                        "value": [{"value": m} for m in sorted(desired)]})
-            summary = {"strategy": "replace", "members": len(desired)}
-
-        if ops:
-            self._call("PATCH", f"/Groups/{group_id}", json={"schemas": [PATCH_SCHEMA], "Operations": ops})
-        summary["operations"] = len(ops)
-        return summary
+    def set_group_external_id(self, group_id: str, external_id: str) -> None:
+        """Bitwarden ignores externalId on PUT /Groups, so linking an existing group needs PATCH."""
+        body = {"schemas": [PATCH_SCHEMA],
+                "Operations": [{"op": "replace", "path": "externalId", "value": external_id}]}
+        self._call("PATCH", f"/Groups/{group_id}", json=body)

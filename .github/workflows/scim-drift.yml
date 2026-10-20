@@ -1,0 +1,64 @@
+name: Bitwarden SCIM drift check
+
+# The sync relies on Bitwarden SCIM behaviors verified against bitwarden/server at one commit
+# (see TESTING.md, section 5). This opens an issue when the SCIM code changes after that commit,
+# so someone re-checks those assumptions. To accept the changes, update BASELINE_* below.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  BASELINE_SHA: 4aa2373be206cc2949f928de69648f467ed4f811
+  BASELINE_DATE: "2026-10-20T05:45:40Z"
+  WATCHED_PATHS: >-
+    bitwarden_license/src/Scim
+    bitwarden_license/test/Scim.Test
+    bitwarden_license/test/Scim.IntegrationTest
+
+jobs:
+  drift:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: List SCIM commits since the baseline
+        id: scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          : > commits.md
+          for path in $WATCHED_PATHS; do
+            gh api --paginate "repos/bitwarden/server/commits?path=$path&since=$BASELINE_DATE&per_page=100" \
+              --jq ".[] | select(.sha != \"$BASELINE_SHA\")
+                    | select(.commit.message | startswith(\"Bumped version\") | not)
+                    | \"- [\(.sha[0:8])](\(.html_url)) \(.commit.message | split(\"\n\")[0]) (\(.commit.committer.date[0:10]))\"" \
+              >> commits.md
+          done
+          sort -u -o commits.md commits.md
+          echo "count=$(wc -l < commits.md | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          cat commits.md
+
+      - name: Open or update the drift issue
+        if: steps.scan.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Bitwarden SCIM code changed since validated baseline"
+          {
+            echo "bitwarden/server changed SCIM code after \`${BASELINE_SHA:0:8}\` ($BASELINE_DATE)."
+            echo "Re-check the assumptions in TESTING.md section 5, then update \`BASELINE_SHA\`/\`BASELINE_DATE\`"
+            echo "in \`.github/workflows/scim-drift.yml\` and close this issue."
+            echo
+            cat commits.md
+          } > body.md
+          existing=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" -R "$GITHUB_REPOSITORY" --body-file body.md
+          else
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body-file body.md
+          fi

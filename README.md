@@ -120,6 +120,8 @@ Group lists contain commas, so set them with a different delimiter:
 | `DRY_RUN` | `true` | When `true`, the job only logs what it would do. |
 | `REMOVAL_ACTION` | `revoke` | `revoke`, `delete` (remove from the organization), or `none`. |
 | `PROTECTED_EMAILS` | (empty) | Comma-separated emails that are never removed. |
+| `ADOPT_GROUPS` | (empty) | Comma-separated Google group emails whose same-named Bitwarden group the sync may take over. By default, a Bitwarden group with the same name that the sync didn't create is skipped with a warning, because taking it over replaces its members. |
+| `ADOPT_USERS` | `false` | Lets the sync take over existing Bitwarden members that match a Google user by email and have no externalId (for example, manually invited members). `true` adopts all of them; a comma-separated list adopts only those emails. Adopted members are linked to their Google user and from then on are revoked and restored like members the sync invited. Members in `PROTECTED_EMAILS` are never adopted. |
 | `GROUP_UPDATE_MODE` | `put` | How group membership is updated: `put` replaces the whole group each run; `patch` sends only the changes. Leave the default unless Bitwarden support advises otherwise. |
 | `MAX_REMOVALS` | `10` | If a run would remove more members than this, it stops without changing anything. This protects against mistakes such as a mistyped group name. Raise it for a planned bulk change. |
 

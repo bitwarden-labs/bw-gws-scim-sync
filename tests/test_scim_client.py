@@ -8,13 +8,16 @@ from urllib.parse import parse_qs, urlparse
 
 from src.bitwarden_scim import BitwardenScim
 from src.main import apply
-from src.models import BwUser, GoogleGroup, GoogleUser
+from src.models import GoogleGroup, GoogleUser
 from src.planner import build_plan
 
-STATE = {"users": {}, "groups": {}, "requests": [], "hide_group_members": False}
+STATE = {"users": {}, "groups": {}, "requests": []}
 
 
 class FakeScim(BaseHTTPRequestHandler):
+    """Mirrors bitwarden/server: group responses never include members, PUT /Groups ignores
+    externalId, and PATCH can set externalId."""
+
     def log_message(self, *a):
         pass
 
@@ -38,14 +41,12 @@ class FakeScim(BaseHTTPRequestHandler):
 
     def do_GET(self):
         p, res, rid = self._route()
+        public = (lambda i: {k: v for k, v in i.items() if k != "members"}) if res == "Groups" else dict
         if rid:
-            item = dict(STATE[res.lower()][rid])
-            if res == "Groups" and STATE["hide_group_members"]:
-                item.pop("members", None)
-            return self._send(200, item)
+            return self._send(200, public(STATE[res.lower()][rid]))
         q = parse_qs(p.query)
         start, count = int(q["startIndex"][0]), int(q["count"][0])
-        items = list(STATE[res.lower()].values())
+        items = [public(i) for i in STATE[res.lower()].values()]
         self._send(200, {"totalResults": len(items), "startIndex": start,
                          "Resources": items[start - 1:start - 1 + count]})
 
@@ -61,6 +62,8 @@ class FakeScim(BaseHTTPRequestHandler):
         _, res, rid = self._route()
         body = self._body()
         body["id"] = rid
+        if res == "Groups":
+            body["externalId"] = STATE["groups"][rid].get("externalId")
         STATE[res.lower()][rid] = body
         STATE["requests"].append(("PUT", res, body))
         self._send(200, body)
@@ -73,8 +76,8 @@ class FakeScim(BaseHTTPRequestHandler):
             path = op.get("path", "")
             if path == "active":
                 item["active"] = op["value"]
-            elif path == "displayName":
-                item["displayName"] = op["value"]
+            elif path in ("displayName", "externalId"):
+                item[path] = op["value"]
             elif path == "members" and op["op"] == "replace":
                 item["members"] = op["value"]
             elif path == "members" and op["op"] == "add":
@@ -98,6 +101,10 @@ class ScimClientTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+
+    def setUp(self):
+        for value in STATE.values():
+            value.clear()
 
     def test_pagination_and_full_apply(self):
         # 150 pre-existing unmanaged members forces two pages at PAGE_SIZE=100.
@@ -133,27 +140,47 @@ class ScimClientTests(unittest.TestCase):
         self.assertEqual([(m, r) for m, r, _ in STATE["requests"]], [("PUT", "Groups")])
 
 
-    def test_patch_group_diff_and_replace(self):
+    def test_patch_group_replaces_name_and_members(self):
         scim = BitwardenScim(self.url, "test-key")
         gid = scim.create_group("Finance", "g2", ["m1", "m2", "m3"])
-
-        STATE["requests"].clear()
-        result = scim.patch_group(gid, "Finance Team", ["m2", "m3", "m4"])
-        self.assertEqual(result, {"strategy": "diff", "added": 1, "removed": 1, "operations": 3})
-        self.assertEqual(sorted(m["value"] for m in STATE["groups"][gid]["members"]), ["m2", "m3", "m4"])
+        self.assertEqual(scim.patch_group(gid, "Finance Team", ["m3", "m4"]), {"strategy": "patch"})
+        self.assertEqual(STATE["groups"][gid]["members"], [{"value": "m3"}, {"value": "m4"}])
         self.assertEqual(STATE["groups"][gid]["displayName"], "Finance Team")
 
-        result = scim.patch_group(gid, "Finance Team", ["m2", "m3", "m4"])
-        self.assertEqual(result["operations"], 0)  # already in sync: nothing sent
-        self.assertEqual([r for r, *_ in STATE["requests"]].count("PATCH"), 1)
+    def test_adopted_group_gets_linked_by_external_id(self):
+        scim = BitwardenScim(self.url, "test-key")
+        STATE["groups"]["legacy"] = {"id": "legacy", "displayName": "Sales", "members": [{"value": "x"}]}
+        bob = GoogleUser("100000000000000000002", "bob@acme.com", "Bob", "B", "Bob B", False)
+        sales = lambda: GoogleGroup("g3", "sales@acme.com", "Sales", {bob.id})
 
-        STATE["hide_group_members"] = True
-        try:
-            result = scim.patch_group(gid, "Finance Team", ["m9"])
-        finally:
-            STATE["hide_group_members"] = False
-        self.assertEqual(result, {"strategy": "replace", "members": 1, "operations": 1})
-        self.assertEqual(STATE["groups"][gid]["members"], [{"value": "m9"}])
+        plan = build_plan({bob.id: bob}, [sales()], scim.list_users(), scim.list_groups(),
+                          adopt_groups={"sales@acme.com"})
+        self.assertEqual(apply(plan, scim), 0)
+        self.assertEqual(STATE["groups"]["legacy"]["externalId"], "g3")  # PUT alone would not store it
+        self.assertEqual(len(STATE["groups"]["legacy"]["members"]), 1)
+
+        # Later runs match by externalId and no longer need ADOPT_GROUPS.
+        plan = build_plan({bob.id: bob}, [sales()], scim.list_users(), scim.list_groups())
+        self.assertEqual([(c.bw_group_id, c.link) for c in plan.groups], [("legacy", False)])
+
+    def test_adopted_user_is_linked_then_revoked_when_removed(self):
+        scim = BitwardenScim(self.url, "test-key")
+        STATE["users"]["manual"] = {"id": "manual", "userName": "bob@acme.com", "active": True,
+                                    "emails": [{"value": "bob@acme.com", "primary": True}]}
+        bob = GoogleUser("100000000000000000002", "bob@acme.com", "Bob", "B", "Bob B", False)
+        users = {bob.id: bob}
+
+        plan = build_plan(users, [GoogleGroup("g4", "ops@acme.com", "Ops", {bob.id})],
+                          scim.list_users(), scim.list_groups(), adopt_all_users=True)
+        self.assertEqual(apply(plan, scim), 0)
+        self.assertEqual(STATE["users"]["manual"]["externalId"], bob.id)
+
+        # Removed from the Google group: now revoked, even with ADOPT_USERS off.
+        plan = build_plan(users, [GoogleGroup("g4", "ops@acme.com", "Ops", set())],
+                          scim.list_users(), scim.list_groups())
+        self.assertEqual([u.id for u in plan.revoke], ["manual"])
+        apply(plan, scim)
+        self.assertFalse(STATE["users"]["manual"]["active"])
 
 
 if __name__ == "__main__":

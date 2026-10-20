@@ -67,11 +67,47 @@ class PlannerTests(unittest.TestCase):
         plan = build_plan(google_users(), [group(ALICE)], bw, [], removal_action="none")
         self.assertEqual(plan.removal_count, 0)
 
-    def test_groups_match_by_external_id_then_name(self):
+    def test_groups_match_by_external_id(self):
         plan = build_plan(google_users(), [group(ALICE)], [], [BwGroup("bwg", "grp1", "Old name")])
         self.assertEqual((plan.groups[0].bw_group_id, plan.groups[0].external_id), ("bwg", "grp1"))
-        plan = build_plan(google_users(), [group(ALICE)], [], [BwGroup("bwg2", "dc-ext", "engineering")])
+
+    def test_same_named_unmanaged_group_is_skipped_unless_adopted(self):
+        existing = [BwGroup("bwg2", "dc-ext", "engineering")]
+        plan = build_plan(google_users(), [group(ALICE)], [], existing)
+        self.assertEqual(plan.groups, [])
+        self.assertIn("ADOPT_GROUPS", plan.warnings[0])
+        plan = build_plan(google_users(), [group(ALICE)], [], existing, adopt_groups={"ENG@acme.com"})
         self.assertEqual((plan.groups[0].bw_group_id, plan.groups[0].external_id), ("bwg2", "dc-ext"))
+        plan = build_plan(google_users(), [group(ALICE)], [], [BwGroup("bwg3", None, "Engineering")],
+                          adopt_groups={"eng@acme.com"})
+        self.assertEqual((plan.groups[0].bw_group_id, plan.groups[0].external_id), ("bwg3", "grp1"))
+
+    def test_warns_about_skipped_group_members(self):
+        plan = build_plan(google_users(), [group(ALICE, CAROL, "999999999999999999999")], [], [])
+        self.assertTrue(any("skipped 2 member(s)" in w for w in plan.warnings))
+
+    def test_adopt_users(self):
+        manual = [BwUser("bw-a", None, "alice@acme.com", True), BwUser("bw-b", None, "bob@acme.com", False)]
+        plan = build_plan(google_users(), [group(ALICE, BOB)], manual, [])
+        self.assertEqual((plan.adopt_users, plan.reactivate), ([], []))  # off by default
+        self.assertEqual(plan.id_map, {ALICE: "bw-a", BOB: "bw-b"})
+
+        plan = build_plan(google_users(), [group(ALICE, BOB)], manual, [], adopt_all_users=True)
+        self.assertEqual([(g, u.id) for g, u in plan.adopt_users], [(ALICE, "bw-a"), (BOB, "bw-b")])
+        self.assertEqual([u.id for u in plan.reactivate], ["bw-b"])
+
+        plan = build_plan(google_users(), [group(ALICE, BOB)], manual, [], adopt_user_emails={"BOB@acme.com"})
+        self.assertEqual([u.id for _, u in plan.adopt_users], ["bw-b"])
+
+        plan = build_plan(google_users(), [group(ALICE)], manual, [], adopt_all_users=True,
+                          protected_emails={"alice@acme.com"})
+        self.assertEqual(plan.adopt_users, [])
+
+    def test_adopt_users_skips_members_owned_by_another_tool(self):
+        ldap = [BwUser("bw-a", "cn=Alice,dc=acme,dc=com", "alice@acme.com", True)]
+        plan = build_plan(google_users(), [group(ALICE)], ldap, [], adopt_all_users=True)
+        self.assertEqual(plan.adopt_users, [])
+        self.assertTrue(any("another tool" in w for w in plan.warnings))
 
 
 if __name__ == "__main__":

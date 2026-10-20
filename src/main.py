@@ -20,6 +20,14 @@ def apply(plan: Plan, scim: BitwardenScim, group_update_mode: str = "put") -> in
             errors += 1
             log("ERROR", "Create user failed", email=u.email, status=e.status, error=str(e))
 
+    for gid, bw in plan.adopt_users:
+        try:
+            scim.set_user_external_id(bw.id, gid)
+            log("INFO", "Adopted user", email=bw.email, external_id=gid)
+        except ScimError as e:
+            errors += 1
+            log("ERROR", "Adopt user failed", email=bw.email, status=e.status, error=str(e))
+
     for bw in plan.reactivate:
         try:
             scim.set_active(bw.id, True)
@@ -41,6 +49,9 @@ def apply(plan: Plan, scim: BitwardenScim, group_update_mode: str = "put") -> in
             else:
                 scim.replace_group(change.bw_group_id, g.name, change.external_id, members)
                 log("INFO", "Updated group", group=g.name, members=len(members), strategy="put")
+            if change.link:
+                scim.set_group_external_id(change.bw_group_id, change.external_id)
+                log("INFO", "Linked group", group=g.name, external_id=change.external_id)
         except ScimError as e:
             errors += 1
             log("ERROR", "Group sync failed", group=g.name, error=str(e))
@@ -75,6 +86,8 @@ def run() -> int:
     plan = build_plan(
         google_users, google_groups, scim.list_users(), scim.list_groups(),
         removal_action=cfg.removal_action, protected_emails=cfg.protected_emails,
+        adopt_groups=cfg.adopt_groups,
+        adopt_all_users=cfg.adopt_all_users, adopt_user_emails=cfg.adopt_user_emails,
     )
 
     if not any(g.member_ids for g in google_groups):
