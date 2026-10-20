@@ -1,0 +1,59 @@
+name: Live dry run
+
+# Runs the real sync against the test Google Workspace and Bitwarden org with DRY_RUN forced on,
+# so it only reads. Catches expired keys, removed domain-wide delegation, and API changes.
+#
+# Configuration lives in the "live-test" environment (Settings > Environments), limited to main:
+#   secrets:   BW_SCIM_URL, BW_SCIM_API_KEY
+#   variables: GOOGLE_ADMIN_EMAIL, GOOGLE_SA_EMAIL, GOOGLE_GROUPS, GCP_WIF_PROVIDER
+# Google access is keyless: GitHub's OIDC token is exchanged through Workload Identity Federation
+# (pool "github" in mccabe-test, restricted to this repo and environment) for the sync's service
+# account, which then signs its own domain-wide delegation token, as it does on Cloud Run.
+
+on:
+  schedule:
+    - cron: "30 6 * * *" # Daily 06:30 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # For Workload Identity Federation.
+
+concurrency:
+  group: live-dry-run
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-24.04
+    environment: live-test
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Authenticate to Google Cloud (keyless)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GOOGLE_SA_EMAIL }}
+      - name: Sync (dry run)
+        env:
+          BW_SCIM_URL: ${{ secrets.BW_SCIM_URL }}
+          BW_SCIM_API_KEY: ${{ secrets.BW_SCIM_API_KEY }}
+          GOOGLE_ADMIN_EMAIL: ${{ vars.GOOGLE_ADMIN_EMAIL }}
+          GOOGLE_SA_EMAIL: ${{ vars.GOOGLE_SA_EMAIL }}
+          GOOGLE_GROUPS: ${{ vars.GOOGLE_GROUPS }}
+          DRY_RUN: "true" # Never change this here: CI must not write to Bitwarden.
+        run: |
+          set -o pipefail
+          python -m src.main | tee sync.log
+          {
+            echo "### Planned changes (dry run)"
+            echo '```json'
+            grep '"Sync plan"' sync.log | python -c 'import sys,json; print(json.dumps(json.loads(sys.stdin.read())["plan"], indent=2))'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

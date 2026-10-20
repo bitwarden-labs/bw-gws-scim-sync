@@ -31,6 +31,14 @@ GitHub Actions runs these on every push and pull request (`.github/workflows/ci.
 A weekly workflow (`.github/workflows/scim-drift.yml`) opens an issue when Bitwarden's SCIM code
 changes after the commit section 5 was verified against.
 
+A daily workflow (`.github/workflows/live-dry-run.yml`) runs the real sync against the test Workspace
+and Bitwarden org with `DRY_RUN` forced on, and writes the planned changes to the job summary. Its
+settings live in the `live-test` GitHub environment (limited to `main`): secrets `BW_SCIM_URL` and
+`BW_SCIM_API_KEY`, variables `GOOGLE_ADMIN_EMAIL`, `GOOGLE_SA_EMAIL`, `GOOGLE_GROUPS` and
+`GCP_WIF_PROVIDER`. Google access uses Workload Identity Federation, so no Google key is stored in
+GitHub. After rotating the SCIM key, update it with
+`gh secret set BW_SCIM_API_KEY --env live-test`.
+
 ## 2. Test environment
 
 You need:
