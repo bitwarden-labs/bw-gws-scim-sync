@@ -17,14 +17,19 @@ python -m unittest discover -s tests -t . -v
 
 - `tests/test_planner.py` covers the decision logic: who gets invited, restored, revoked or deleted;
   how suspended Google users, protected emails and other identity providers' members are handled;
-  and how groups are matched.
+  how groups are matched; and `ADOPT_GROUPS` / `ADOPT_USERS`.
 - `tests/test_scim_client.py` runs the SCIM client and the full apply step against an in-process fake
-  SCIM server. It covers pagination, invites, revoke, group create, group PUT, both group PATCH
-  strategies, and an idempotent second run.
+  SCIM server. It covers pagination, invites, revoke, group create, group PUT and PATCH, linking
+  adopted groups and users, and an idempotent second run.
 
-The fake server implements the SCIM behavior this code assumes. A passing run proves the code is
-consistent with those assumptions, not that Bitwarden behaves the same way. Section 5 lists the
-assumptions to check against real Bitwarden.
+The fake server mirrors the bitwarden/server behaviors listed in section 5 (for example, group
+responses never include members, and PUT ignores `externalId`). A passing run proves the code is
+consistent with those behaviors, not that a live Bitwarden org behaves the same way.
+
+GitHub Actions runs these on every push and pull request (`.github/workflows/ci.yml`), together with
+`ruff`, `shellcheck setup.sh`, and a `docker build` that checks the image runs as a non-root user.
+A weekly workflow (`.github/workflows/scim-drift.yml`) opens an issue when Bitwarden's SCIM code
+changes after the commit section 5 was verified against.
 
 ## 2. Test environment
 
@@ -98,8 +103,8 @@ Run these in order. Start every step with `DRY_RUN=true`, read the plan, and the
 | # | Action | Expected result |
 |---|---|---|
 | 1 | First dry run | Plan invites T1, T2 and T3, and creates both groups. No removals. Nothing changes in Bitwarden. |
-| 2 | Same with `DRY_RUN=false` | T1, T2 and T3 get invitation emails. Groups `bw-sync-test` and `bw-sync-parent` exist, and the parent group contains T2. **If either group is empty, PUT isn't replacing membership. Set `GROUP_UPDATE_MODE=patch` and rerun.** |
-| 3 | Run again with no changes in Google | No invites or revokes. With `put`, one PUT per group. With `patch`, the log shows `operations: 0`. |
+| 2 | Same with `DRY_RUN=false` | T1, T2 and T3 get invitation emails. Groups `bw-sync-test` and `bw-sync-parent` exist, and the parent group contains T2. |
+| 3 | Run again with no changes in Google | No invites or revokes. One PUT (or PATCH in `patch` mode) per group. |
 | 4 | Add a new user T5 to `bw-sync-child@` | T5 is invited and appears in `bw-sync-parent`. |
 | 5 | Remove T1 from `bw-sync-test@` | T1 is revoked, not deleted, and removed from the group. |
 | 6 | Add T1 back | T1 is restored and back in the group. |
@@ -121,14 +126,16 @@ Then test the Cloud Run deployment in a fresh project:
 
 ## 5. Bitwarden SCIM behavior to confirm
 
-The code assumes the behaviors below. Check them against the SCIM project in `bitwarden/server`,
-including its integration tests, and against what you observe in section 4.
+These behaviors were checked against `bitwarden_license/src/Scim/` in `bitwarden/server`
+(`main`, commit 4aa2373b, 2026-10-20). Confirm them against what you observe in section 4.
 
-| Assumption | How to check |
+| Behavior (server source) | How to check |
 |---|---|
-| `PUT /Groups/{id}` with `members` replaces membership | Step 2 |
-| With `GROUP_UPDATE_MODE=patch`, whether `GET /Groups/{id}` returns `members` | The log shows `strategy=diff` (members returned) or `strategy=replace` (not returned) |
-| PATCH `add` and `remove` on `members[value eq "<id>"]`, and `replace` on `members` and `displayName`, are accepted | Steps 3–6 in `patch` mode |
+| `PUT /Groups/{id}` with `members` replaces membership; omitting `members` leaves it alone (`Groups/PutGroupCommand.cs`) | Step 2 |
+| `PUT /Groups/{id}` ignores `externalId`, so adopting an existing group sets it with PATCH `replace externalId` (`Groups/PatchGroupCommand.cs`) | `ADOPT_GROUPS` run logs `Linked group` |
+| `GET /Groups` and `GET /Groups/{id}` never return `members` (`Models/ScimGroupResponseModel.cs`) | — |
+| PATCH `replace` on `members` and `displayName` is accepted | Steps 3–6 in `patch` mode |
+| `POST /Users` returns 409 if the email or `externalId` already exists, and sends an invite unless the org disabled it (`Users/PostUserCommand.cs`) | Step 2 |
 | PATCH `{"op":"replace","path":"active","value":false}` revokes a member and `true` restores one | Steps 5–7 |
 | `Content-Type: application/scim+json` is accepted | Any write |
 | `GET /Users` lists every member of the organization, including owners and manually invited members, with `externalId` and `emails` | Step 1 plan and T4 |

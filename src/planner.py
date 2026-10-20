@@ -14,6 +14,7 @@ class GroupChange:
     google_group: GoogleGroup
     bw_group_id: str | None  # None means create
     external_id: str
+    link: bool = False  # existing group has no externalId yet; set it so later runs match by id
 
 
 @dataclass
@@ -23,6 +24,7 @@ class Plan:
     revoke: list[BwUser] = field(default_factory=list)
     delete: list[BwUser] = field(default_factory=list)
     groups: list[GroupChange] = field(default_factory=list)
+    adopt_users: list[tuple[str, BwUser]] = field(default_factory=list)  # (google user id, member)
     id_map: dict[str, str] = field(default_factory=dict)  # google user id -> bitwarden member id
     warnings: list[str] = field(default_factory=list)
 
@@ -36,6 +38,7 @@ class Plan:
             "reactivate": [u.email for u in self.reactivate],
             "revoke": [u.email for u in self.revoke],
             "delete": [u.email for u in self.delete],
+            "adopt_users": [bw.email for _, bw in self.adopt_users],
             "groups": [
                 {
                     "group": c.google_group.name,
@@ -61,17 +64,29 @@ def build_plan(
     bw_groups: list[BwGroup],
     removal_action: str = "revoke",
     protected_emails: set[str] | None = None,
+    adopt_groups: set[str] | None = None,
+    adopt_all_users: bool = False,
+    adopt_user_emails: set[str] | None = None,
 ) -> Plan:
     protected = {e.lower() for e in (protected_emails or set())}
+    adopt = {e.lower() for e in (adopt_groups or set())}
+    adopt_emails = {e.lower() for e in (adopt_user_emails or set())}
     plan = Plan()
 
     # Scope = every non-suspended user in any synced group (nested membership already flattened).
     scope: set[str] = set()
     for group in google_groups:
-        group.member_ids = {
+        eligible = {
             gid for gid in group.member_ids
             if gid in google_users and not google_users[gid].suspended
         }
+        skipped = len(group.member_ids) - len(eligible)
+        if skipped:
+            plan.warnings.append(
+                f"{group.email}: skipped {skipped} member(s) that are suspended or not users of "
+                "this Workspace (e.g. external addresses)."
+            )
+        group.member_ids = eligible
         scope |= group.member_ids
 
     bw_by_ext = {u.external_id: u for u in bw_users if u.external_id}
@@ -87,7 +102,19 @@ def build_plan(
         elif guser.email.lower() in bw_by_email:
             bw = bw_by_email[guser.email.lower()]
             plan.id_map[gid] = bw.id
-            if not bw.active:
+            email = guser.email.lower()
+            wants_adopt = (adopt_all_users or email in adopt_emails) and email not in protected
+            if wants_adopt and bw.external_id:
+                plan.warnings.append(
+                    f"{guser.email} already has externalId {bw.external_id!r} from another tool; "
+                    "not adopting it."
+                )
+            elif wants_adopt:
+                # Link it to the Google user so later runs manage it, revocation included.
+                plan.adopt_users.append((gid, bw))
+                if not bw.active:
+                    plan.reactivate.append(bw)
+            elif not bw.active:
                 plan.warnings.append(
                     f"{guser.email} exists in Bitwarden but is revoked and was not provisioned "
                     "by this sync; leaving it for an admin to restore."
@@ -110,11 +137,23 @@ def build_plan(
     bw_groups_by_ext = {g.external_id: g for g in bw_groups if g.external_id}
     bw_groups_by_name = {g.display_name.lower(): g for g in bw_groups}
     for group in google_groups:
-        existing = bw_groups_by_ext.get(group.id) or bw_groups_by_name.get(group.name.lower())
-        if existing is None:
+        existing = bw_groups_by_ext.get(group.id)
+        if existing is not None:
+            plan.groups.append(GroupChange(group, existing.id, existing.external_id))
+            continue
+        same_name = bw_groups_by_name.get(group.name.lower())
+        if same_name is None:
             plan.groups.append(GroupChange(group, None, group.id))
+        elif group.email.lower() in adopt:
+            # Explicitly adopted: keep its externalId if it has one, to avoid fighting other tools.
+            plan.groups.append(GroupChange(group, same_name.id, same_name.external_id or group.id,
+                                           link=not same_name.external_id))
         else:
-            # Keep whatever externalId the Bitwarden group already has, to avoid fighting other tools.
-            plan.groups.append(GroupChange(group, existing.id, existing.external_id or group.id))
+            # Updating would replace the members of a group this sync didn't create.
+            plan.warnings.append(
+                f'{group.email}: Bitwarden already has a group named "{same_name.display_name}" '
+                "that this sync didn't create; skipping it. Add the Google group to ADOPT_GROUPS "
+                "to let the sync take it over (its members will be replaced)."
+            )
 
     return plan

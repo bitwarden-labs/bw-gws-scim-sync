@@ -36,6 +36,9 @@ class Config:
     dry_run: bool
     removal_action: str
     protected_emails: set[str]
+    adopt_groups: set[str]
+    adopt_all_users: bool
+    adopt_user_emails: set[str]
     max_removals: int
     group_update_mode: str
 
@@ -47,6 +50,12 @@ class Config:
         group_mode = os.environ.get("GROUP_UPDATE_MODE", "put").strip().lower()
         if group_mode not in GROUP_UPDATE_MODES:
             raise SystemExit(f"GROUP_UPDATE_MODE must be one of {GROUP_UPDATE_MODES}, got {group_mode!r}")
+        adopt_users = os.environ.get("ADOPT_USERS", "").strip()
+        adopt_all_users = adopt_users.lower() in ("1", "true", "yes", "on")
+        adopt_user_emails = (
+            set() if adopt_all_users or adopt_users.lower() in ("", "0", "false", "no", "off")
+            else {e.lower() for e in _list("ADOPT_USERS")}
+        )
         groups = _list("GOOGLE_GROUPS")
         if not groups:
             raise SystemExit("GOOGLE_GROUPS must list at least one Google group email")
@@ -60,6 +69,9 @@ class Config:
             dry_run=_bool("DRY_RUN", True),
             removal_action=action,
             protected_emails={e.lower() for e in _list("PROTECTED_EMAILS")},
+            adopt_groups={e.lower() for e in _list("ADOPT_GROUPS")},
+            adopt_all_users=adopt_all_users,
+            adopt_user_emails=adopt_user_emails,
             max_removals=int(os.environ.get("MAX_REMOVALS", "10")),
             group_update_mode=group_mode,
         )
