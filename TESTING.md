@@ -42,6 +42,44 @@ settings live in the `live-test` GitHub environment (limited to `main`): secrets
 GitHub. After rotating the SCIM key, update it with
 `gh secret set BW_SCIM_API_KEY --env live-test`.
 
+How the code fits together (maintainers):
+
+```mermaid
+flowchart TB
+    SEL["select-groups.sh"] --> PICK["src/picker.py<br/>directory picker"]
+    SEL -- "dry run" --> MAIN
+    PICK --> GD
+    MAIN["src/main.py<br/>run and apply"] --> CONFIG["src/config.py<br/>settings from environment variables"]
+    MAIN --> GD["src/google_directory.py<br/>Directory API, keyless delegation"]
+    MAIN --> SCIMC["src/bitwarden_scim.py<br/>Bitwarden SCIM client"]
+    MAIN --> PLAN["src/planner.py<br/>pure diff, no I/O"]
+    MAIN --> LOG["src/log.py<br/>JSON log lines"]
+    GD --> HTTP["src/http.py<br/>retries"]
+    SCIMC --> HTTP
+    HTTP --> LOG
+    GD --> MODELS["src/models.py"]
+    SCIMC --> MODELS
+    PLAN --> MODELS
+```
+
+How the GitHub workflows connect to the test environment:
+
+```mermaid
+flowchart LR
+    subgraph GH["GitHub repository"]
+        PUSH["Push or pull request"] --> CI["ci.yml<br/>ruff · unit tests · shellcheck · docker build"]
+        WEEK["Weekly"] --> DRIFT["scim-drift.yml"]
+        DAY["Daily"] --> LIVE["live-dry-run.yml<br/>environment live-test"]
+        ISSUE["Drift issue"]
+    end
+    DRIFT -- "SCIM commits since the baseline" --> BWS["bitwarden/server<br/>SCIM source"]
+    DRIFT -- "opens or updates" --> ISSUE
+    LIVE -- "GitHub OIDC token" --> WIF["Workload Identity pool<br/>in the test project"]
+    WIF -- "acts as" --> SA(["bw-scim-sync<br/>service account"])
+    SA -- "read-only delegation" --> DIR["Directory API<br/>test Workspace"]
+    LIVE -- "SCIM URL and key from<br/>environment secrets, read only" --> SCIM["Bitwarden SCIM<br/>test organization"]
+```
+
 ## 2. Test environment
 
 You need:

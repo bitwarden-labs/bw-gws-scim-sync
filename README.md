@@ -31,6 +31,67 @@ Setup takes about 15 minutes.
 | Service account `bw-scim-sync` | Your Google Cloud project | The identity the job runs as. No key file is ever created for it. |
 | Domain-wide delegation | Google Admin console | Lets the service account **read** users and groups. It can't change anything in Google Workspace. |
 
+```mermaid
+flowchart LR
+    ADMIN["You, in Cloud Shell<br/>setup.sh · select-groups.sh"]
+    subgraph GCP["Your Google Cloud project"]
+        SCHED["Cloud Scheduler<br/>bw-scim-sync-schedule"]
+        JOB["Cloud Run job<br/>bw-scim-sync"]
+        SA(["Service account<br/>bw-scim-sync<br/>no key file"])
+        SECRET[("Secret Manager<br/>bw-scim-api-key")]
+        IAMC["IAM Credentials API"]
+        LOGS[("Cloud Logging")]
+    end
+    subgraph GWS["Google Workspace"]
+        DWD["Domain-wide delegation<br/>3 read-only scopes"]
+        DIR["Directory API<br/>users and groups"]
+    end
+    subgraph BWD["Bitwarden"]
+        SCIM["SCIM endpoint"]
+        ORG["Your organization<br/>members and groups"]
+    end
+    ADMIN -- "deploys and configures" --> JOB
+    SCHED -- "starts on schedule" --> JOB
+    JOB -. "runs as" .-> SA
+    SECRET -- "SCIM API key" --> JOB
+    JOB -- "signs its own token" --> IAMC
+    JOB -- "reads, read-only" --> DIR
+    DWD -. "allows" .-> DIR
+    JOB -- "invites, revokes,<br/>updates groups" --> SCIM
+    SCIM --> ORG
+    JOB -- "plan and results" --> LOGS
+```
+
+What happens on each run:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as Cloud Scheduler
+    participant J as Cloud Run job
+    participant I as IAM Credentials API
+    participant O as Google sign-in
+    participant G as Directory API
+    participant B as Bitwarden SCIM
+    S->>J: Start the job
+    Note over J: SCIM API key is read from Secret Manager at start
+    J->>I: Sign a delegation token as bw-scim-sync
+    I-->>J: Signed token
+    J->>O: Exchange it for read-only directory access
+    O-->>J: Access token
+    J->>G: Read users and the chosen groups
+    G-->>J: Users, groups and nested members
+    J->>B: Read members and groups
+    B-->>J: Members and groups
+    Note over J: Compare and build the plan.<br/>Safety checks: MAX_REMOVALS, protected users, same-named groups
+    alt DRY_RUN is true
+        Note over J: Log the plan only
+    else DRY_RUN is false
+        J->>B: Invite, restore, update groups, revoke
+    end
+    Note over J: Every step is logged to Cloud Logging
+```
+
 ## Before you start
 
 You need:
@@ -157,6 +218,26 @@ If the arrow keys don't work in your terminal, the script falls back to a number
 numbers to select (for example `1,3,5-7`), `/text` to filter, and `s` to save.
 
 You can run `select-groups.sh` again at any time to change the groups.
+
+```mermaid
+sequenceDiagram
+    actor A as You in Cloud Shell
+    participant S as select-groups.sh
+    participant R as Cloud Run job settings
+    participant G as Directory API
+    A->>S: bash select-groups.sh
+    S->>R: Read the current settings
+    S->>G: List groups, with the sync's read-only access
+    G-->>S: All groups and member counts
+    S->>A: Checklist, current groups ticked
+    A->>S: Tick, untick, Enter
+    S->>A: Groups added and removed
+    A->>S: y to save
+    S->>R: Save GOOGLE_GROUPS
+    opt Dry run
+        S->>A: Planned changes. Nothing changes in Bitwarden
+    end
+```
 
 ## Step 5: Test with a dry run
 

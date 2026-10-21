@@ -9,6 +9,31 @@ When you finish, continue with **README Step 3** (domain-wide delegation).
 > Maintainers: this file must match `setup.sh`. When the script changes, update the matching section
 > here. The table at the end maps each script step to its section.
 
+## What you'll create
+
+The numbers match the sections below. An arrow labelled with a role means the account at the start
+holds that role on the resource at the end.
+
+```mermaid
+flowchart TB
+    SA(["Service account bw-scim-sync<br/>step 3"])
+    SECRET[("Secret bw-scim-api-key<br/>step 4")]
+    JOB["Cloud Run job bw-scim-sync<br/>step 5"]
+    SCHED["Cloud Scheduler job<br/>bw-scim-sync-schedule<br/>step 6"]
+    SA -- "Service Account Token Creator, on itself" --> SA
+    SA -- "Secret Manager Secret Accessor" --> SECRET
+    SA -- "Cloud Run Invoker" --> JOB
+    JOB -. "runs as" .-> SA
+    SCHED -- "calls jobs:run as" --> SA
+    subgraph BUILD["Step 5: build"]
+        SRC["bw-gws-scim-sync folder<br/>in Cloud Shell"] -- "source upload" --> CB["Cloud Build"]
+        CB -- "container image" --> AR[("Artifact Registry")]
+    end
+    AR -- "image" --> JOB
+    CB -. "runs as" .-> CSA(["PROJECT_NUMBER-compute<br/>default service account<br/>needs Cloud Run Builder if your<br/>organization removed its defaults"])
+    APIS["Step 2: enabled APIs<br/>Cloud Run · Cloud Build · Artifact Registry · Cloud Scheduler<br/>Secret Manager · IAM Service Account Credentials · Admin SDK"]
+```
+
 ## Values used below
 
 | Placeholder | Example | Notes |
