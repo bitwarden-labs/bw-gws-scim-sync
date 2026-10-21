@@ -12,16 +12,18 @@ When you finish, continue with **README Step 3** (domain-wide delegation).
 ## What you'll create
 
 The numbers match the sections below. An arrow labelled with a role means the account at the start
-holds that role on the resource at the end.
+holds that role on the resource at the end. Step 1 (billing) and step 2 (the seven APIs) don't
+create resources, so they aren't drawn.
 
 ```mermaid
 flowchart TB
     SA(["Service account bw-scim-sync<br/>step 3"])
     SECRET[("Secret bw-scim-api-key<br/>step 4")]
-    JOB["Cloud Run job bw-scim-sync<br/>step 5"]
+    JOB["Cloud Run job bw-scim-sync<br/>step 5<br/>environment variables and<br/>BW_SCIM_API_KEY from the secret"]
     SCHED["Cloud Scheduler job<br/>bw-scim-sync-schedule<br/>step 6"]
     SA -- "Service Account Token Creator, on itself" --> SA
     SA -- "Secret Manager Secret Accessor" --> SECRET
+    SECRET -- "BW_SCIM_API_KEY" --> JOB
     SA -- "Cloud Run Invoker" --> JOB
     JOB -. "runs as" .-> SA
     SCHED -- "calls jobs:run as" --> SA
@@ -30,8 +32,7 @@ flowchart TB
         CB -- "container image" --> AR[("Artifact Registry")]
     end
     AR -- "image" --> JOB
-    CB -. "runs as" .-> CSA(["PROJECT_NUMBER-compute<br/>default service account<br/>needs Cloud Run Builder if your<br/>organization removed its defaults"])
-    APIS["Step 2: enabled APIs<br/>Cloud Run · Cloud Build · Artifact Registry · Cloud Scheduler<br/>Secret Manager · IAM Service Account Credentials · Admin SDK"]
+    CB -. "runs as; may need<br/>Cloud Run Builder" .-> CSA(["Compute default<br/>service account"])
 ```
 
 ## Values used below
@@ -264,10 +265,11 @@ delete the `bw-scim-sync` Artifact Registry repository.
 | `setup.sh` step | Section here |
 |---|---|
 | Checks the gcloud account and project, asks for the values | Values used below |
+| On a rerun, reads the deployed job's environment variables, the schedule and whether the secret exists, and offers them as defaults | Console: the job's **Configuration** tab and the scheduler job. gcloud: `gcloud run jobs describe bw-scim-sync --region $REGION` and `gcloud scheduler jobs describe bw-scim-sync-schedule --location $REGION` |
 | Billing check | 1 |
 | `==> Enabling APIs` | 2 |
 | `==> Service account` (create, Token Creator on itself) | 3 |
-| `==> Storing the SCIM API key in Secret Manager` (secret, version, Secret Accessor) | 4 |
+| `==> Storing the SCIM API key in Secret Manager` (secret, version, Secret Accessor). On a rerun, Enter keeps the stored key and no version is added | 4 |
 | `==> Building and deploying the Cloud Run job` (`--source`, env vars, secret, retries, timeout) | 5, option A |
 | `==> Schedule` (Cloud Run Invoker, Cloud Scheduler HTTP job) | 6 |
 | Prints the Client ID, scopes and next steps | 7, then README Steps 3–6 |

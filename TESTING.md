@@ -188,6 +188,8 @@ Then test the Cloud Run deployment in a fresh project:
 | 24 | Run `select-groups.sh` again, change nothing, press Enter | It says `No changes.` and doesn't offer to save. `q` cancels without changes. |
 | 25 | `select-groups.sh --protected-users`, pick T4; then `--adopt-users`, pick T6 | `PROTECTED_EMAILS` and `ADOPT_USERS` hold those emails. Unselecting everyone removes the variable. |
 | 26 | Run `select-groups.sh` from an account that has never used it | It grants that account Token Creator on the service account, waits through the `signBlob` delay, then lists groups. |
+| 27 | Rerun `bash setup.sh` on a deployed job | It says it found the job, and every prompt shows the current value in brackets (SCIM URL, admin email, groups, schedule, time zone). Enter keeps each one. Enter at the key prompt prints `Keeping the stored key`, and `gcloud secrets versions list bw-scim-api-key` shows no new version. |
+| 28 | Rerun `bash setup.sh` and change only the schedule | The scheduler job has the new schedule. The job's environment variables are unchanged. |
 
 ## 5. Bitwarden SCIM behavior to confirm
 

@@ -50,7 +50,7 @@ flowchart LR
         SCIM["SCIM endpoint"]
         ORG["Your organization<br/>members and groups"]
     end
-    ADMIN -- "deploys and configures" --> JOB
+    ADMIN -- "deploys, reads and<br/>updates settings" --> JOB
     SCHED -- "starts on schedule" --> JOB
     JOB -. "runs as" .-> SA
     SECRET -- "SCIM API key" --> JOB
@@ -60,6 +60,34 @@ flowchart LR
     JOB -- "invites, revokes,<br/>updates groups" --> SCIM
     SCIM --> ORG
     JOB -- "plan and results" --> LOGS
+```
+
+Where the settings live, and which script sets them. The job's settings are environment
+variables on the Cloud Run job; see [Settings](#settings) for what each one does.
+
+```mermaid
+flowchart TB
+    subgraph TOOLS["How you change them"]
+        direction LR
+        SETUP["setup.sh<br/>1 reads what's deployed<br/>2 asks, current values as defaults<br/>3 creates or updates in place"]
+        PICK["select-groups.sh<br/>reads the job's settings,<br/>checklist from your directory,<br/>saves one list"]
+        CON["Console, or<br/>gcloud run jobs update"]
+    end
+    subgraph ENV["Environment variables on the Cloud Run job bw-scim-sync"]
+        direction LR
+        E1["Asked by setup.sh<br/>BW_SCIM_URL<br/>GOOGLE_ADMIN_EMAIL<br/>GOOGLE_SA_EMAIL<br/>GOOGLE_GROUPS<br/>DRY_RUN=true, first deploy only"]
+        E2["Picked from your directory<br/>GOOGLE_GROUPS<br/>PROTECTED_EMAILS<br/>ADOPT_USERS"]
+        E3["Optional<br/>DRY_RUN · REMOVAL_ACTION<br/>MAX_REMOVALS · ADOPT_GROUPS<br/>GROUP_UPDATE_MODE"]
+        E4["BW_SCIM_API_KEY<br/>linked to the secret"]
+    end
+    SECRET[("Secret Manager<br/>bw-scim-api-key")]
+    SCHED["Cloud Scheduler<br/>schedule and time zone"]
+    SETUP <-- "reads and writes" --> E1
+    PICK <-- "reads and writes" --> E2
+    CON <-- "reads and writes any" --> E3
+    SETUP <-- "reads and writes" --> SCHED
+    SETUP -- "new key, if entered" --> SECRET
+    SECRET --> E4
 ```
 
 What happens on each run:
@@ -164,8 +192,11 @@ The script then:
 When it finishes, it prints a **Client ID**, a list of **OAuth scopes**, and the next steps. Keep
 them for Step 3.
 
-It's safe to run the script again. It updates what already exists, and keeps settings you changed
-later, including `DRY_RUN`.
+It's safe to run the script again, for example to change the SCIM URL, the admin email, the groups
+or the schedule, or to install a new version. On a rerun it reads the deployed job, its schedule
+and the stored key, and shows the current values in brackets: press **Enter** to keep each one. At
+the API key prompt, **Enter** keeps the stored key. It then updates everything in place and keeps
+settings it doesn't ask about, such as `DRY_RUN` and `PROTECTED_EMAILS`.
 
 > **Tip:** to skip the prompts, set the answers as environment variables first, for example
 > `PROJECT_ID=my-project REGION=us-central1 bash setup.sh`. The variable names are `PROJECT_ID`,
@@ -226,14 +257,14 @@ sequenceDiagram
     participant R as Cloud Run job settings
     participant G as Directory API
     A->>S: bash select-groups.sh
-    S->>R: Read the current settings
+    S->>R: Read GOOGLE_ADMIN_EMAIL, GOOGLE_SA_EMAIL<br/>and the current list
     S->>G: List groups, with the sync's read-only access
     G-->>S: All groups and member counts
     S->>A: Checklist, current groups ticked
     A->>S: Tick, untick, Enter
     S->>A: Groups added and removed
     A->>S: y to save
-    S->>R: Save GOOGLE_GROUPS
+    S->>R: Save GOOGLE_GROUPS, or PROTECTED_EMAILS<br/>or ADOPT_USERS with the options
     opt Dry run
         S->>A: Planned changes. Nothing changes in Bitwarden
     end
