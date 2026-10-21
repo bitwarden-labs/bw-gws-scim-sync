@@ -57,6 +57,8 @@ Create these test fixtures in Google:
 | `bw-sync-parent@` group whose only member is the group `bw-sync-child@`, which contains user **T2** | Nested-group flattening |
 | User **T3**, initially in `bw-sync-test@` | Suspend and revoke tests |
 | User **T4** invited to Bitwarden by hand, not in any synced group | Must never be touched |
+| User **T6** invited to Bitwarden by hand **and** in `bw-sync-test@` | Email matching and `ADOPT_USERS` |
+| `bw-sync-legacy@` group containing T1, plus a Bitwarden group named `bw-sync-legacy` created by hand with T4 as its member | Same-name protection and `ADOPT_GROUPS` |
 
 ## 3. Running locally
 
@@ -69,6 +71,10 @@ gcloud auth application-default login
 gcloud iam service-accounts add-iam-policy-binding bw-scim-sync@PROJECT.iam.gserviceaccount.com \
   --member user:you@yourdomain.com --role roles/iam.serviceAccountTokenCreator
 ```
+
+A new IAM grant can take a few minutes to apply. Until it does, runs fail with
+`Error calling the IAM signBlob API ... 403`; wait and retry. If they keep failing, check that
+`gcloud auth application-default login` used the account you granted.
 
 Put the settings in a `.env.test` file. `.gitignore` already excludes `.env*` files, so don't commit them.
 
@@ -122,34 +128,43 @@ Run these in order. Start every step with `DRY_RUN=true`, read the plan, and the
 | 10 | Set `PROTECTED_EMAILS` to include T5, then remove T5 from the group | T5 isn't revoked, and the log has a warning. |
 | 11 | Set `GOOGLE_GROUPS` to a group that doesn't exist | The run fails with a Google 404 and changes nothing. |
 | 12 | Set `REMOVAL_ACTION=delete` and remove T5 (optional) | T5 is removed from the organization. |
-| 13 | Rotate the SCIM API key in Bitwarden without updating the job | The run fails with 401. Rerunning `setup.sh` with the new key fixes it. |
+| 13 | Rotate the SCIM API key in Bitwarden without updating the job | The run fails with 401. Storing the new key (README, "Rotate the SCIM API key") fixes it. |
+| 14 | Add `bw-sync-legacy@` to `GOOGLE_GROUPS` | The plan warns `Bitwarden already has a group named "bw-sync-legacy"` and doesn't update it. T4 is still its only member. |
+| 15 | Set `ADOPT_GROUPS=bw-sync-legacy@...` | The group's members become T1 only, and the log shows `Linked group`. The next run without `ADOPT_GROUPS` still updates it (matched by externalId). |
+| 16 | T6 in `bw-sync-test@`, default settings | T6 is added to the group, not invited again. Removing T6 from the Google group doesn't revoke T6. |
+| 17 | Set `ADOPT_USERS=<T6 email>` with T6 in the group | The plan lists T6 under `adopt_users`, and the log shows `Adopted user`. Removing T6 from the group then revokes T6. |
 
 Then test the Cloud Run deployment in a fresh project:
 
 | # | Action | Expected result |
 |---|---|---|
-| 14 | `bash setup.sh` in Cloud Shell | Completes and prints the Client ID and scopes. Rerunning it also succeeds. |
-| 15 | `gcloud run jobs execute bw-scim-sync --region R --wait` | Completes. The dry-run plan appears in the job's logs. |
-| 16 | `gcloud scheduler jobs run bw-scim-sync-schedule --location R` | Starts a new job execution. |
+| 18 | `bash setup.sh` in Cloud Shell | Completes and prints the Client ID and scopes. Rerunning it also succeeds. |
+| 19 | `gcloud run jobs execute bw-scim-sync --region R --wait` | Completes. The dry-run plan appears in the job's logs. |
+| 20 | `gcloud scheduler jobs run bw-scim-sync-schedule --location R` | Starts a new job execution. |
+| 21 | Set `DRY_RUN=false` and `PROTECTED_EMAILS=x@...` on the job, then rerun `bash setup.sh` | Both settings are unchanged afterwards (`gcloud run jobs describe bw-scim-sync --region R`). |
+| 22 | Repeat 18–20 following MANUAL_SETUP.md instead of `setup.sh`, in another fresh project | Same results. Note any console labels that differ from the guide and fix the guide. |
 
 ## 5. Bitwarden SCIM behavior to confirm
 
 These behaviors were checked against `bitwarden_license/src/Scim/` in `bitwarden/server`
-(`main`, commit 4aa2373b, 2026-10-20). Confirm them against what you observe in section 4.
+(`main`, commit 4aa2373b, 2026-10-20). The weekly drift workflow reports later changes to that code.
+**Status:** *source* = confirmed in the server code; *live* = observed against a real org;
+*open* = still to confirm.
 
-| Behavior (server source) | How to check |
-|---|---|
-| `PUT /Groups/{id}` with `members` replaces membership; omitting `members` leaves it alone (`Groups/PutGroupCommand.cs`) | Step 2 |
-| `PUT /Groups/{id}` ignores `externalId`, so adopting an existing group sets it with PATCH `replace externalId` (`Groups/PatchGroupCommand.cs`) | `ADOPT_GROUPS` run logs `Linked group` |
-| `GET /Groups` and `GET /Groups/{id}` never return `members` (`Models/ScimGroupResponseModel.cs`) | — |
-| PATCH `replace` on `members` and `displayName` is accepted | Steps 3–6 in `patch` mode |
-| `POST /Users` returns 409 if the email or `externalId` already exists, and sends an invite unless the org disabled it (`Users/PostUserCommand.cs`) | Step 2 |
-| PATCH `{"op":"replace","path":"active","value":false}` revokes a member and `true` restores one | Steps 5–7 |
-| `Content-Type: application/scim+json` is accepted | Any write |
-| `GET /Users` lists every member of the organization, including owners and manually invited members, with `externalId` and `emails` | Step 1 plan and T4 |
-| `GET /Users` and `GET /Groups` paginate with `startIndex` and `count` | A test org with more than 100 members, or read the server code |
-| `POST /Users` for an email already in the organization returns 409 and has no other effect | Add a Google alias that matches T4's address |
-| Directory Connector uses the Google user id as `externalId` | Sync a test org with DC first, then run this tool. Users should match without new invites. |
+| Behavior | Status | How to check |
+|---|---|---|
+| `PUT /Groups/{id}` with `members` replaces membership; omitting `members` leaves it alone (`Groups/PutGroupCommand.cs`) | source | Step 2 |
+| `PUT /Groups/{id}` ignores `externalId`, so adopted groups are linked with PATCH `replace externalId` (`Groups/PatchGroupCommand.cs`) | source | Step 15 |
+| `GET /Groups` and `GET /Groups/{id}` never return `members` (`Models/ScimGroupResponseModel.cs`) | source | — |
+| PATCH `replace` on `members` and `displayName` is accepted | source | Steps 3–6 in `patch` mode |
+| PATCH `replace` on a member's `externalId` is accepted; `add` is ignored (`Users/PatchUserCommand.cs`) | source | Step 17 |
+| `POST /Users` returns 409 if the email or `externalId` already exists, and sends an invite unless the org disabled it (`Users/PostUserCommand.cs`) | source | Step 2 |
+| PATCH `{"op":"replace","path":"active","value":false}` revokes a member and `true` restores one | source | Steps 5–7 |
+| `Content-Type: application/scim+json` is accepted | source | Any write |
+| `GET /Users` and `GET /Groups` paginate with `startIndex` (1-based) and `count` (no maximum); the list key is lowercase `resources` | source, live | Step 1 |
+| `GET /Users` lists every member, including owners and manually invited members, with `externalId` and `emails` | live (29 members, 2026-10-20) | Step 1 plan and T4 |
+| Bitwarden rejects revoking or deleting the last confirmed owner with 400 | source | — |
+| Directory Connector (Google Workspace source) stores the Google user ID as `externalId` | open | Sync a test org with Directory Connector first, then run this tool. Users should match without new invites. |
 
 Known limits, which are expected behavior rather than bugs:
 
@@ -167,7 +182,10 @@ gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name=
 ```
 
 The `Sync plan` entry shows everything the run intended to do. Each change is then logged as its own
-line, such as `Invited user`, `Revoked user` or `Updated group` (which includes the strategy used).
+line: `Invited user`, `Restored user`, `Revoked user`, `Removed user`, `Adopted user`,
+`Created group`, `Updated group` (with the strategy used) and `Linked group`. Things skipped on
+purpose are logged as `WARNING` before the plan, for example same-named groups, members outside the
+Workspace, and members owned by another tool.
 Failures are logged at `ERROR` severity with the SCIM status code.
 
 ## 7. Recording results
@@ -176,4 +194,4 @@ Copy this table into the ticket or PR for each test round.
 
 | Date | Tester | Bitwarden env (US / EU / self-hosted + version) | GROUP_UPDATE_MODE | Steps passed | Issues |
 |---|---|---|---|---|---|
-| | | | | | |
+| 2026-10-20 | Bitwarden team (local runs) | US cloud | put | 1 (dry runs only), 11 (Google 404), 14 | Test Workspace has one user, so most steps need more fixtures. Found and fixed: same-named groups were overwritten; PUT ignores `externalId`. No writes yet. |

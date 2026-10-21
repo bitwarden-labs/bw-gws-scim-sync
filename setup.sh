@@ -97,22 +97,23 @@ retry_iam "let the service account read the secret" \
   gcloud secrets add-iam-policy-binding "$SECRET" \
   --member "serviceAccount:$SA_EMAIL" --role roles/secretmanager.secretAccessor
 
-echo "==> Building and deploying the Cloud Run job (DRY_RUN=true: nothing changes yet)"
-# Env vars go through a YAML file: values contain "@", "," and ":" which break --set-env-vars parsing.
-yaml_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"; }
-ENV_FILE=$(mktemp)
-trap 'rm -f "$ENV_FILE"' EXIT
-{
-  echo "BW_SCIM_URL: $(yaml_quote "$BW_SCIM_URL")"
-  echo "GOOGLE_ADMIN_EMAIL: $(yaml_quote "$GOOGLE_ADMIN_EMAIL")"
-  echo "GOOGLE_SA_EMAIL: $(yaml_quote "$SA_EMAIL")"
-  echo "GOOGLE_GROUPS: $(yaml_quote "$GOOGLE_GROUPS")"
-  echo "DRY_RUN: 'true'"
-} > "$ENV_FILE"
+# Only the values asked above are updated, so a rerun (new key, new version) keeps settings changed
+# later, such as DRY_RUN=false or PROTECTED_EMAILS. "^;^" makes ";" the separator, because the
+# values contain "," "@" and ":".
+for value in "$BW_SCIM_URL" "$GOOGLE_ADMIN_EMAIL" "$GOOGLE_GROUPS"; do
+  [[ "$value" != *";"* ]] || { echo "Values can't contain ';': $value"; exit 1; }
+done
+ENV_VARS="^;^BW_SCIM_URL=$BW_SCIM_URL;GOOGLE_ADMIN_EMAIL=$GOOGLE_ADMIN_EMAIL;GOOGLE_SA_EMAIL=$SA_EMAIL;GOOGLE_GROUPS=$GOOGLE_GROUPS"
+if gcloud run jobs describe "$JOB" --region "$REGION" >/dev/null 2>&1; then
+  echo "==> Building and updating the Cloud Run job (your other settings, including DRY_RUN, are kept)"
+else
+  echo "==> Building and deploying the Cloud Run job (DRY_RUN=true: nothing changes yet)"
+  ENV_VARS="$ENV_VARS;DRY_RUN=true"
+fi
 gcloud run jobs deploy "$JOB" --source . --region "$REGION" \
   --service-account "$SA_EMAIL" \
   --set-secrets "BW_SCIM_API_KEY=$SECRET:latest" \
-  --env-vars-file "$ENV_FILE" \
+  --update-env-vars "$ENV_VARS" \
   --max-retries 0 --task-timeout 30m
 
 echo "==> Schedule"
