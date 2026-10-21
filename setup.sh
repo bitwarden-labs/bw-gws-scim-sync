@@ -39,7 +39,9 @@ if [[ -z "${BW_SCIM_API_KEY:-}" ]]; then
   read -r -s -p "Bitwarden SCIM API key (input hidden): " BW_SCIM_API_KEY; echo
 fi
 ask GOOGLE_ADMIN_EMAIL "Google Workspace admin email the sync reads the directory as"
-ask GOOGLE_GROUPS "Google group email(s) to sync, comma-separated"
+if [[ -z "${GOOGLE_GROUPS+set}" ]]; then  # Optional: groups can be picked later with select-groups.sh.
+  read -r -p "Google group email(s) to sync, comma-separated (or press Enter to pick them from your directory after Step 3): " GOOGLE_GROUPS
+fi
 ask SCHEDULE "Sync schedule (cron)" "0 * * * *"
 ask TIME_ZONE "Schedule time zone" "Etc/UTC"
 
@@ -103,7 +105,8 @@ retry_iam "let the service account read the secret" \
 for value in "$BW_SCIM_URL" "$GOOGLE_ADMIN_EMAIL" "$GOOGLE_GROUPS"; do
   [[ "$value" != *";"* ]] || { echo "Values can't contain ';': $value"; exit 1; }
 done
-ENV_VARS="^;^BW_SCIM_URL=$BW_SCIM_URL;GOOGLE_ADMIN_EMAIL=$GOOGLE_ADMIN_EMAIL;GOOGLE_SA_EMAIL=$SA_EMAIL;GOOGLE_GROUPS=$GOOGLE_GROUPS"
+ENV_VARS="^;^BW_SCIM_URL=$BW_SCIM_URL;GOOGLE_ADMIN_EMAIL=$GOOGLE_ADMIN_EMAIL;GOOGLE_SA_EMAIL=$SA_EMAIL"
+[[ -z "$GOOGLE_GROUPS" ]] || ENV_VARS="$ENV_VARS;GOOGLE_GROUPS=$GOOGLE_GROUPS"
 if gcloud run jobs describe "$JOB" --region "$REGION" >/dev/null 2>&1; then
   echo "==> Building and updating the Cloud Run job (your other settings, including DRY_RUN, are kept)"
 else
@@ -133,15 +136,17 @@ fi
 CLIENT_ID=$(gcloud iam service-accounts describe "$SA_EMAIL" --format 'value(oauth2ClientId)')
 cat <<MSG
 
-Done. One manual step remains in the Google Admin console (admin.google.com):
-  Security > Access and data control > API controls > Manage domain-wide delegation > Add new
+Done. Next steps (README Steps 3-5):
 
-  Client ID:    $CLIENT_ID
-  OAuth scopes: https://www.googleapis.com/auth/admin.directory.user.readonly,https://www.googleapis.com/auth/admin.directory.group.readonly,https://www.googleapis.com/auth/admin.directory.group.member.readonly
+3. In the Google Admin console, open Security > Access and data control > API controls >
+   Manage domain-wide delegation (https://admin.google.com/ac/owl/domainwidedelegation),
+   select Add new, and enter:
+     Client ID:    $CLIENT_ID
+     OAuth scopes: https://www.googleapis.com/auth/admin.directory.user.readonly,https://www.googleapis.com/auth/admin.directory.group.readonly,https://www.googleapis.com/auth/admin.directory.group.member.readonly
 
-Then run a test (dry run, nothing changes in Bitwarden):
-  gcloud run jobs execute $JOB --region $REGION --wait
+4. Choose the Google groups to sync from your directory (and run a dry run):
+     bash select-groups.sh
 
-Review the planned changes in the logs, then turn on real syncing:
-  gcloud run jobs update $JOB --region $REGION --update-env-vars DRY_RUN=false
+5. When the dry-run plan looks right, turn on real syncing:
+     gcloud run jobs update $JOB --region $REGION --update-env-vars DRY_RUN=false
 MSG

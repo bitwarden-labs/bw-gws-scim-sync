@@ -18,6 +18,9 @@ python -m unittest discover -s tests -t . -v
 - `tests/test_planner.py` covers the decision logic: who gets invited, restored, revoked or deleted;
   how suspended Google users, protected emails and other identity providers' members are handled;
   how groups are matched; and `ADOPT_GROUPS` / `ADOPT_USERS`.
+- `tests/test_picker.py` covers the directory picker used by `select-groups.sh`: selection parsing
+  (`1,3,5-7`), filtering, the numbered-list flow, keeping saved emails missing from the directory,
+  and how groups and users are listed.
 - `tests/test_scim_client.py` runs the SCIM client and the full apply step against an in-process fake
   SCIM server. It covers pagination, invites, revoke, group create, group PUT and PATCH, linking
   adopted groups and users, and an idempotent second run.
@@ -143,6 +146,10 @@ Then test the Cloud Run deployment in a fresh project:
 | 20 | `gcloud scheduler jobs run bw-scim-sync-schedule --location R` | Starts a new job execution. |
 | 21 | Set `DRY_RUN=false` and `PROTECTED_EMAILS=x@...` on the job, then rerun `bash setup.sh` | Both settings are unchanged afterwards (`gcloud run jobs describe bw-scim-sync --region R`). |
 | 22 | Repeat 18–20 following MANUAL_SETUP.md instead of `setup.sh`, in another fresh project | Same results. Note any console labels that differ from the guide and fix the guide. |
+| 23 | Run `setup.sh` pressing Enter at the group prompt, finish Step 3, then `bash select-groups.sh` | The job deploys without `GOOGLE_GROUPS`. The picker lists every Workspace group with member counts; arrow keys, Space, `/` filter and Enter work. After saving, `gcloud run jobs describe` shows the chosen `GOOGLE_GROUPS`, and the offered dry run prints a plan. |
+| 24 | Run `select-groups.sh` again, change nothing, press Enter | It says `No changes.` and doesn't offer to save. `q` cancels without changes. |
+| 25 | `select-groups.sh --protected-users`, pick T4; then `--adopt-users`, pick T6 | `PROTECTED_EMAILS` and `ADOPT_USERS` hold those emails. Unselecting everyone removes the variable. |
+| 26 | Run `select-groups.sh` from an account that has never used it | It grants that account Token Creator on the service account, waits through the `signBlob` delay, then lists groups. |
 
 ## 5. Bitwarden SCIM behavior to confirm
 

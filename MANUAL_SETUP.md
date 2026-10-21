@@ -19,7 +19,8 @@ When you finish, continue with **README Step 3** (domain-wide delegation).
 | `SA_EMAIL` | `bw-scim-sync@PROJECT_ID.iam.gserviceaccount.com` | Created in step 3. |
 
 The names `bw-scim-sync`, `bw-scim-api-key` and `bw-scim-sync-schedule` are the ones the README
-commands use. If you choose other names, adjust those commands too.
+commands and `select-groups.sh` use. Keep them, or the README commands need adjusting and
+`select-groups.sh` won't find the job.
 
 To use the `gcloud` commands, open [Cloud Shell](https://shell.cloud.google.com) and set the
 variables once:
@@ -127,7 +128,7 @@ The job needs these settings, whichever option you use:
 | Environment variable `BW_SCIM_URL` | The SCIM URL from README Step 1 |
 | Environment variable `GOOGLE_ADMIN_EMAIL` | The Google Workspace admin the sync reads the directory as |
 | Environment variable `GOOGLE_SA_EMAIL` | `SA_EMAIL` |
-| Environment variable `GOOGLE_GROUPS` | Comma-separated Google group emails |
+| Environment variable `GOOGLE_GROUPS` | Comma-separated Google group emails. **Optional here:** leave it out and pick the groups from your directory with `select-groups.sh` (README Step 4). |
 | Environment variable `DRY_RUN` | `true` |
 | Secret exposed as environment variable `BW_SCIM_API_KEY` | Secret `bw-scim-api-key`, version `latest` |
 | Maximum retries | `0` |
@@ -139,7 +140,8 @@ need them.
 ### Option A: one command (the same as `setup.sh`)
 
 This builds the image and deploys the job in one step. `"^;^"` makes `;` the separator between
-variables, because the values contain commas.
+variables, because the values contain commas. To pick the groups later with `select-groups.sh`,
+remove `GOOGLE_GROUPS=...;` from the command.
 
 ```bash
 gcloud run jobs deploy bw-scim-sync --source . --region $REGION \
@@ -169,7 +171,8 @@ The first time, `gcloud` asks to create an Artifact Registry repository named
    - **Container image URL:** select the image built in step 2.
    - **Job name** and **Region:** from the settings table.
    - **Container(s), Volumes, Connections, Security**:
-     - **Variables & Secrets:** add the four environment variables and `DRY_RUN=true`. Under
+     - **Variables & Secrets:** add the environment variables from the table (`GOOGLE_GROUPS` is
+       optional) and `DRY_RUN=true`. Under
        **Secrets exposed as environment variables**, select **Reference a secret**: name
        `BW_SCIM_API_KEY`, secret `bw-scim-api-key`, version `latest`.
      - **Task timeout:** 30 minutes. **Number of retries per failed task:** 0.
@@ -210,7 +213,8 @@ README Step 3 needs the service account's OAuth client ID.
   gcloud iam service-accounts describe $SA_EMAIL --format 'value(oauth2ClientId)'
   ```
 
-Now continue with **README Step 3**, then Steps 4 and 5.
+Now continue with **README Step 3**, then Steps 4 to 6. `select-groups.sh` (Step 4) works the same
+after a manual setup.
 
 ## What was created
 
@@ -241,7 +245,8 @@ delete the `bw-scim-sync` Artifact Registry repository.
 | `==> Storing the SCIM API key in Secret Manager` (secret, version, Secret Accessor) | 4 |
 | `==> Building and deploying the Cloud Run job` (`--source`, env vars, secret, retries, timeout) | 5, option A |
 | `==> Schedule` (Cloud Run Invoker, Cloud Scheduler HTTP job) | 6 |
-| Prints the Client ID and scopes | 7, then README Step 3 |
+| Prints the Client ID, scopes and next steps | 7, then README Steps 3–6 |
+| Group prompt (optional; Enter skips it) | `GOOGLE_GROUPS` in the step 5 table, or README Step 4 |
 
 `setup.sh` doesn't grant Cloud Run Builder (step 5). It's only needed when an organization has
 removed the default build account's permissions.

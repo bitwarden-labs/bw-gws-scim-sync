@@ -75,6 +75,14 @@ class GoogleDirectory:
             )
         return users
 
+    def list_groups(self) -> list[dict]:
+        """Every group in the Workspace, for the picker: email, name and direct member count."""
+        return [
+            {"email": g["email"], "name": g.get("name") or g["email"],
+             "members": int(g.get("directMembersCount", 0))}
+            for g in self._paged("/groups", {"customer": "my_customer", "maxResults": 200}, "groups")
+        ]
+
     def get_group(self, group_email: str) -> GoogleGroup:
         g = self._get(f"/groups/{group_email}", {})
         members = {

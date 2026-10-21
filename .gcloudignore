@@ -3,5 +3,6 @@ tests/
 __pycache__/
 *.md
 setup.sh
+select-groups.sh
 .env*
 .venv/

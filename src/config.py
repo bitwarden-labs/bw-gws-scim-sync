@@ -58,7 +58,10 @@ class Config:
         )
         groups = _list("GOOGLE_GROUPS")
         if not groups:
-            raise SystemExit("GOOGLE_GROUPS must list at least one Google group email")
+            raise SystemExit(
+                "GOOGLE_GROUPS must list at least one Google group email. "
+                "Choose groups with: bash select-groups.sh"
+            )
         return Config(
             bw_scim_url=_required("BW_SCIM_URL").rstrip("/"),
             bw_scim_api_key=_required("BW_SCIM_API_KEY"),
