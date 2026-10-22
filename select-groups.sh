@@ -49,8 +49,10 @@ if [[ -z "${REGION:-}" ]]; then
     for i in "${!REGIONS[@]}"; do echo "  $((i + 1))) ${REGIONS[$i]}"; done
     read -r -p "Number of the region to use [1]: " choice
     choice=${choice:-1}
-    [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#REGIONS[@]} )) \
-      || { echo "Choose a number from the list." >&2; exit 1; }
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > ${#REGIONS[@]} )); then
+      echo "Choose a number from the list." >&2
+      exit 1
+    fi
     REGION=${REGIONS[$((choice - 1))]}
   else
     echo "Couldn't find the $JOB job in project $PROJECT_ID. Check the project, or run setup.sh first (README Step 2)." >&2
