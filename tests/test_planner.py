@@ -109,6 +109,34 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(plan.adopt_users, [])
         self.assertTrue(any("another tool" in w for w in plan.warnings))
 
+    def test_every_change_has_a_reason(self):
+        finance = GoogleGroup("grp2", "fin@acme.com", "Finance", {ALICE})
+        bw = [
+            BwUser("bw-b", BOB, "bob@acme.com", False),  # managed, revoked, back in a group
+            BwUser("bw-c", CAROL, "carol@acme.com", True),  # suspended in Google
+            BwUser("bw-d", DAN, "dan@acme.com", True),  # in Google, but in no synced group
+            BwUser("bw-x", "100000000000000000099", "gone@acme.com", True),  # deleted from Google
+        ]
+        plan = build_plan(google_users(), [group(ALICE, BOB), finance], bw,
+                          [BwGroup("bwg", "grp1", "Engineering")])
+        summary = plan.summary()
+        reasons = {c["email"]: c["reason"] for key in ("create_users", "reactivate", "revoke")
+                   for c in summary[key]}
+        self.assertEqual(reasons, {
+            "alice@acme.com": "in Engineering, Finance",
+            "bob@acme.com": "back in Engineering",
+            "carol@acme.com": "suspended or archived in Google",
+            "dan@acme.com": "no longer in any synced group",
+            "gone@acme.com": "no longer in this Google Workspace (deleted, or moved out)",
+        })
+        self.assertEqual([(g["group"], g["reason"]) for g in summary["groups"]],
+                         [("Engineering", "linked to this Google group"), ("Finance", "no Bitwarden group yet")])
+
+    def test_adopted_user_reason(self):
+        plan = build_plan(google_users(), [group(ALICE)], [BwUser("bw-a", None, "alice@acme.com", True)], [],
+                          adopt_all_users=True)
+        self.assertIn("ADOPT_USERS", plan.summary()["adopt_users"][0]["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,6 +15,7 @@ class GroupChange:
     bw_group_id: str | None  # None means create
     external_id: str
     link: bool = False  # existing group has no externalId yet; set it so later runs match by id
+    reason: str = ""
 
 
 @dataclass
@@ -27,23 +28,28 @@ class Plan:
     adopt_users: list[tuple[str, BwUser]] = field(default_factory=list)  # (google user id, member)
     id_map: dict[str, str] = field(default_factory=dict)  # google user id -> bitwarden member id
     warnings: list[str] = field(default_factory=list)
+    reasons: dict[str, str] = field(default_factory=dict)  # lowercased email -> why it changes
 
     @property
     def removal_count(self) -> int:
         return len(self.revoke) + len(self.delete)
 
+    def _why(self, email: str) -> dict:
+        return {"email": email, "reason": self.reasons.get(email.lower(), "")}
+
     def summary(self) -> dict:
         return {
-            "create_users": [u.email for u in self.create_users],
-            "reactivate": [u.email for u in self.reactivate],
-            "revoke": [u.email for u in self.revoke],
-            "delete": [u.email for u in self.delete],
-            "adopt_users": [bw.email for _, bw in self.adopt_users],
+            "create_users": [self._why(u.email) for u in self.create_users],
+            "reactivate": [self._why(u.email) for u in self.reactivate],
+            "revoke": [self._why(u.email) for u in self.revoke],
+            "delete": [self._why(u.email) for u in self.delete],
+            "adopt_users": [self._why(bw.email) for _, bw in self.adopt_users],
             "groups": [
                 {
                     "group": c.google_group.name,
                     "action": "create" if c.bw_group_id is None else "update",
                     "members": len(c.google_group.member_ids),
+                    "reason": c.reason,
                 }
                 for c in self.groups
             ],
@@ -89,6 +95,14 @@ def build_plan(
         group.member_ids = eligible
         scope |= group.member_ids
 
+    groups_of: dict[str, list[str]] = {}  # google user id -> names of the synced groups it's in
+    for group in google_groups:
+        for gid in group.member_ids:
+            groups_of.setdefault(gid, []).append(group.name)
+
+    def in_groups(gid: str) -> str:
+        return "in " + ", ".join(sorted(groups_of[gid]))
+
     bw_by_ext = {u.external_id: u for u in bw_users if u.external_id}
     bw_by_email = {u.email.lower(): u for u in bw_users if u.email}
 
@@ -99,6 +113,7 @@ def build_plan(
             plan.id_map[gid] = bw.id
             if not bw.active:
                 plan.reactivate.append(bw)
+                plan.reasons[bw.email.lower()] = f"back {in_groups(gid)}"
         elif guser.email.lower() in bw_by_email:
             bw = bw_by_email[guser.email.lower()]
             plan.id_map[gid] = bw.id
@@ -112,6 +127,9 @@ def build_plan(
             elif wants_adopt:
                 # Link it to the Google user so later runs manage it, revocation included.
                 plan.adopt_users.append((gid, bw))
+                plan.reasons[bw.email.lower()] = (
+                    f"matches a Google user by email and ADOPT_USERS allows it; {in_groups(gid)}"
+                )
                 if not bw.active:
                     plan.reactivate.append(bw)
             elif not bw.active:
@@ -121,6 +139,7 @@ def build_plan(
                 )
         else:
             plan.create_users.append(guser)
+            plan.reasons[guser.email.lower()] = in_groups(gid)
 
     if removal_action != "none":
         for bw in bw_users:
@@ -129,25 +148,36 @@ def build_plan(
             if bw.email.lower() in protected:
                 plan.warnings.append(f"{bw.email} is out of scope but protected; skipping removal.")
                 continue
+            guser = google_users.get(bw.external_id)
+            if guser is None:
+                why = "no longer in this Google Workspace (deleted, or moved out)"
+            elif guser.suspended:
+                why = "suspended or archived in Google"
+            else:
+                why = "no longer in any synced group"
             if removal_action == "delete":
                 plan.delete.append(bw)
+                plan.reasons[bw.email.lower()] = why
             elif bw.active:
                 plan.revoke.append(bw)
+                plan.reasons[bw.email.lower()] = why
 
     bw_groups_by_ext = {g.external_id: g for g in bw_groups if g.external_id}
     bw_groups_by_name = {g.display_name.lower(): g for g in bw_groups}
     for group in google_groups:
         existing = bw_groups_by_ext.get(group.id)
         if existing is not None:
-            plan.groups.append(GroupChange(group, existing.id, existing.external_id))
+            plan.groups.append(GroupChange(group, existing.id, existing.external_id,
+                                           reason="linked to this Google group"))
             continue
         same_name = bw_groups_by_name.get(group.name.lower())
         if same_name is None:
-            plan.groups.append(GroupChange(group, None, group.id))
+            plan.groups.append(GroupChange(group, None, group.id, reason="no Bitwarden group yet"))
         elif group.email.lower() in adopt:
             # Explicitly adopted: keep its externalId if it has one, to avoid fighting other tools.
             plan.groups.append(GroupChange(group, same_name.id, same_name.external_id or group.id,
-                                           link=not same_name.external_id))
+                                           link=not same_name.external_id,
+                                           reason="same name, taken over through ADOPT_GROUPS"))
         else:
             # Updating would replace the members of a group this sync didn't create.
             plan.warnings.append(

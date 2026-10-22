@@ -228,7 +228,8 @@ gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name=
   --freshness 1h --limit 100 --format 'value(jsonPayload)'
 ```
 
-The `Sync plan` entry shows everything the run intended to do. Each change is then logged as its own
+The `Sync plan` entry shows everything the run intended to do, with a `reason` for each person and
+group (for example `no longer in any synced group`). Check the reasons against the test step. Each change is then logged as its own
 line: `Invited user`, `Restored user`, `Revoked user`, `Removed user`, `Adopted user`,
 `Created group`, `Updated group` (with the strategy used) and `Linked group`. Things skipped on
 purpose are logged as `WARNING` before the plan, for example same-named groups, members outside the

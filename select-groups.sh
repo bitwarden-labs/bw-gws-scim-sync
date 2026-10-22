@@ -105,9 +105,18 @@ for line in sys.stdin:
     entry = json.loads(line)
     if "plan" in entry:
         print("\nPlanned changes (dry run):")
-        for key, value in entry["plan"].items():
-            if key != "warnings":
-                print(f"  {key}: {json.dumps(value)}")
+        labels = {"create_users": "Invite", "reactivate": "Restore", "revoke": "Revoke",
+                  "delete": "Remove", "adopt_users": "Adopt"}
+        changes = 0
+        for key, label in labels.items():
+            for change in entry["plan"][key]:
+                print(f"  {label:8} {change['email']}: {change['reason']}")
+                changes += 1
+        for group in entry["plan"]["groups"]:
+            print(f"  Group    {group['group']}: {group['action']}, {group['members']} member(s); {group['reason']}")
+            changes += 1
+        if not changes:
+            print("  Nothing to change.")
     elif entry.get("severity") in ("WARNING", "ERROR"):
         print(f"{entry['severity']}: {entry['message']}")
 PY

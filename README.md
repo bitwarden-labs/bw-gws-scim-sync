@@ -291,6 +291,19 @@ Cloud, which also shows that the scheduled job works:
    | `groups` | Bitwarden groups that would be created or updated, with their member counts. |
    | `warnings` | Things the sync skipped on purpose. Read these. |
 
+   Every person and group comes with a **reason**, so you can check each change. For example:
+
+   | Reason | Meaning |
+   |---|---|
+   | `in Engineering, Finance` | Invited because they're in these synced groups. |
+   | `back in Engineering` | Restored because they returned to a synced group. |
+   | `no longer in any synced group` | Revoked because they left every synced group. |
+   | `suspended or archived in Google` | Revoked because their Google account is suspended or archived. |
+   | `no longer in this Google Workspace (deleted, or moved out)` | Revoked because their Google account is gone. |
+   | `matches a Google user by email and ADOPT_USERS allows it` | Adopted (see `ADOPT_USERS`). |
+   | `no Bitwarden group yet` / `linked to this Google group` | A group is created, or updated because the sync manages it. |
+   | `same name, taken over through ADOPT_GROUPS` | An existing group with the same name is taken over (see `ADOPT_GROUPS`). |
+
 4. Check the plan, especially `revoke`, and any **WARNING** lines above it. If the run fails with
    `unauthorized_client`, the change from Step 3 isn't active yet: wait a few minutes and run it
    again.
