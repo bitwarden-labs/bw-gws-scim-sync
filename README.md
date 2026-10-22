@@ -116,6 +116,18 @@ each change by hand, follow [docs/MANUAL_SETUP.md](docs/MANUAL_SETUP.md) instead
    ```
 3. Answer the prompts. Press **Enter** to accept a value shown in brackets.
 
+> **Bitwarden internal testing (while the repository isn't public):** the command above gets a
+> `404`. Sign in to GitHub once with `gh auth login`, using an account in the `bitwarden-labs`
+> organization, then use this command in step 2 instead:
+> ```
+> bash <(gh api -H "Accept: application/vnd.github.raw" "repos/bitwarden-labs/bw-gws-scim-sync/contents/install.sh?ref=v1.0.0")
+> ```
+> To test the latest unreleased code, use `main` instead of a version:
+> ```
+> BW_SYNC_REF=main bash <(gh api -H "Accept: application/vnd.github.raw" "repos/bitwarden-labs/bw-gws-scim-sync/contents/install.sh?ref=main")
+> ```
+> If `gh` isn't installed, use the zip (see **Other ways to get the tool** below).
+
 You can also run the command in your own terminal instead of Cloud Shell, if it has the
 [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) (signed in with `gcloud auth login`)
 and Python 3.
@@ -129,12 +141,6 @@ and Python 3.
   less install.sh
   bash install.sh
   ```
-- **While the repository isn't public**, the command above gets `404`. Sign in to GitHub with
-  `gh auth login` (an account in the `bitwarden-labs` organization), then use this instead:
-  ```
-  bash <(gh api -H "Accept: application/vnd.github.raw" "repos/bitwarden-labs/bw-gws-scim-sync/contents/install.sh?ref=v1.0.0")
-  ```
-  The installer then also downloads the tool with your GitHub sign-in.
 - **Without the installer.** Upload `bw-gws-scim-sync.zip` with Cloud Shell's **⋮ (More) → Upload**
   menu, then run `unzip bw-gws-scim-sync.zip && cd bw-gws-scim-sync && bash setup.sh`.
 

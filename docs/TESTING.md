@@ -70,6 +70,19 @@ Create these test fixtures in Google:
 
 ## 3. Running locally
 
+To deploy a test copy on Cloud Run, install it with the one-liner. While the repository is internal,
+use the `gh` form (after `gh auth login` with a `bitwarden-labs` account); `main` gets the latest
+unreleased code, or use a tag such as `v1.0.0`:
+
+```bash
+BW_SYNC_REF=main bash <(gh api -H "Accept: application/vnd.github.raw" "repos/bitwarden-labs/bw-gws-scim-sync/contents/install.sh?ref=main")
+```
+
+It downloads into `~/bw-gws-scim-sync` and runs `setup.sh`. After code changes, run it again (or
+`bash setup.sh` in your checkout): the Cloud Run job only uses new code after `setup.sh` redeploys
+it. The rest of this section runs the sync on your machine instead.
+
+
 Run `setup.sh` once against the test project, or create the service account and domain-wide
 delegation by hand as [MANUAL_SETUP.md](MANUAL_SETUP.md) and README Step 3 describe. Then allow your own Google account to sign as that
 service account:
