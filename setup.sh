@@ -34,7 +34,11 @@ MSG
   exit 1
 fi
 gcloud config set project "$PROJECT_ID" --quiet >/dev/null 2>&1
-ask REGION "Region" "europe-west1"
+# On a rerun, default to the deployed job's region.
+DEFAULT_REGION=$(gcloud run jobs list --filter "metadata.name=$JOB" --format 'value(region)' \
+  --limit 1 2>/dev/null || true)
+[[ -n "$DEFAULT_REGION" ]] || DEFAULT_REGION=$(gcloud config get-value run/region 2>/dev/null || true)
+ask REGION "Region" "${DEFAULT_REGION:-europe-west1}"
 
 # On a rerun, read what's deployed so its current values become the defaults (Enter keeps them).
 WORK=$(mktemp -d)
@@ -182,7 +186,7 @@ Done. Next steps (README Steps 3-6):
      OAuth scopes: https://www.googleapis.com/auth/admin.directory.user.readonly,https://www.googleapis.com/auth/admin.directory.group.readonly,https://www.googleapis.com/auth/admin.directory.group.member.readonly
 
 4. Choose the Google groups to sync from your directory, and run a dry run (Step 5):
-     bash select-groups.sh
+     cd $PWD && bash select-groups.sh
 
 6. When the dry-run plan looks right, turn on real syncing:
      gcloud run jobs update $JOB --region $REGION --update-env-vars DRY_RUN=false

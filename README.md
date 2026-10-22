@@ -109,16 +109,40 @@ each change by hand, follow [docs/MANUAL_SETUP.md](docs/MANUAL_SETUP.md) instead
 
 1. Open [Google Cloud Shell](https://shell.cloud.google.com) and select your project at the top of
    the page.
-2. Upload `bw-gws-scim-sync.zip` with the **⋮ (More) → Upload** menu, then unzip it and open the
-   folder:
+2. Paste this command and press **Enter**. It downloads the tool into `~/bw-gws-scim-sync` and starts
+   the setup script:
    ```
-   unzip bw-gws-scim-sync.zip && cd bw-gws-scim-sync
+   bash <(curl -fsSL https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.0.0/install.sh)
    ```
-3. Run the script:
-   ```
-   bash setup.sh
-   ```
-4. Answer the prompts. Press **Enter** to accept a value shown in brackets.
+3. Answer the prompts. Press **Enter** to accept a value shown in brackets.
+
+You can also run the command in your own terminal instead of Cloud Shell, if it has the
+[Google Cloud CLI](https://cloud.google.com/sdk/docs/install) (signed in with `gcloud auth login`)
+and Python 3.
+
+<details>
+<summary>Other ways to get the tool</summary>
+
+- **Read the installer before running it.** Download it, read it, then run it:
+  ```
+  curl -fsSLO https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.0.0/install.sh
+  less install.sh
+  bash install.sh
+  ```
+- **While the repository isn't public**, the command above gets `404`. Sign in to GitHub with
+  `gh auth login` (an account in the `bitwarden-labs` organization), then use this instead:
+  ```
+  bash <(gh api -H "Accept: application/vnd.github.raw" "repos/bitwarden-labs/bw-gws-scim-sync/contents/install.sh?ref=v1.0.0")
+  ```
+  The installer then also downloads the tool with your GitHub sign-in.
+- **Without the installer.** Upload `bw-gws-scim-sync.zip` with Cloud Shell's **⋮ (More) → Upload**
+  menu, then run `unzip bw-gws-scim-sync.zip && cd bw-gws-scim-sync && bash setup.sh`.
+
+The installer accepts these environment variables: `BW_SYNC_REF` (another version, for example
+`BW_SYNC_REF=main`), `BW_SYNC_DIR` (another folder) and `BW_SYNC_SKIP_SETUP=1` (download only).
+Running it again updates the folder to the version you ask for.
+
+</details>
 
 | Prompt | What to enter |
 |---|---|
@@ -146,7 +170,8 @@ them for Step 3.
 
 It's safe to run the script again, for example to change the SCIM URL, the admin email, the groups
 or the schedule, or to install a new version. On a rerun it reads the deployed job, its schedule
-and the stored key, and shows the current values in brackets: press **Enter** to keep each one. At
+and the stored key, and shows the current values in brackets, including the job's region: press
+**Enter** to keep each one. At
 the API key prompt, **Enter** keeps the stored key. It then updates everything in place and keeps
 settings it doesn't ask about, such as `DRY_RUN` and `PROTECTED_EMAILS`.
 
@@ -177,13 +202,15 @@ accounts → bw-scim-sync → Unique ID**, or run:
 
 ## Step 4: Choose the groups to sync
 
-In Cloud Shell, in the same folder as Step 2, run:
+In the same terminal as Step 2, run:
 
 ```
+cd ~/bw-gws-scim-sync
 bash select-groups.sh
 ```
 
-1. Enter your project and the job's region if asked.
+1. Press **Enter** to confirm your project. The script finds the job's region by itself (if the job
+   exists in more than one region, it asks you to pick one).
 2. The script lists every group in your Google Workspace, with its number of direct members (a
    group inside it counts as one). Groups that are already synced are ticked. You only need to pick
    the top group: people in groups nested inside it are included.

@@ -177,6 +177,11 @@ Test these in a fresh project.
 | 22 | Repeat 18–20 following MANUAL_SETUP.md instead of `setup.sh`, in another fresh project | Same results. Note any console labels that differ from the guide and fix the guide. |
 | 27 | Rerun `bash setup.sh` on a deployed job | It says it found the job, and every prompt shows the current value in brackets (SCIM URL, admin email, groups, schedule, time zone). Enter keeps each one. Enter at the key prompt prints `Keeping the stored key`, and `gcloud secrets versions list bw-scim-api-key` shows no new version. |
 | 28 | Rerun `bash setup.sh` and change only the schedule | The scheduler job has the new schedule. The job's environment variables are unchanged. |
+| 32 | In a fresh Cloud Shell, run the README Step 2 one-liner | Downloads the pinned version into `~/bw-gws-scim-sync`, then the `setup.sh` prompts appear and accept answers. Its closing message says `cd ~/bw-gws-scim-sync && bash select-groups.sh`. |
+| 33 | Run the one-liner again with `BW_SYNC_SKIP_SETUP=1` after `select-groups.sh` has run once | Says `Updated ... to v...`. `.venv` is kept, so `select-groups.sh` doesn't reinstall libraries. |
+| 34 | `curl -fsSL .../install.sh \| bash` (a pipe instead of `bash <(...)`) | Works the same: the `setup.sh` prompts read from the terminal. |
+| 35 | `mkdir ~/x && BW_SYNC_DIR=~/x bash <(curl ...)`, and `BW_SYNC_REF=nope bash <(curl ...)` | Refuses to replace `~/x` (`isn't a copy of this tool`); the bad version fails with `Couldn't download` and changes nothing. While the repository is internal, run the installer itself with the `gh api` form from README Step 2; the tarball download then falls back to the `gh` sign-in. |
+| 36 | Rerun `bash setup.sh` on a job deployed in a non-default region | The region prompt defaults to the job's region. |
 
 ### select-groups.sh
 
@@ -185,7 +190,8 @@ Test these in a fresh project.
 | 23 | Run `setup.sh` pressing Enter at the group prompt, finish Step 3, then `bash select-groups.sh` | The job deploys without `GOOGLE_GROUPS`. The picker lists every Workspace group with its direct member count (`bw-sync-parent@` shows 1: the child group). Arrow keys, Space, `/` filter and Enter work. After saving, `gcloud run jobs describe` shows the chosen `GOOGLE_GROUPS`, and the offered dry run prints one line per change with its reason, or `Nothing to change.` |
 | 24 | Run `select-groups.sh` again, change nothing, press Enter | It says `No changes.` and doesn't offer to save. `q` cancels without changes. |
 | 25 | `select-groups.sh --protected-users`, pick T4; then `--adopt-users`, pick T6 | `PROTECTED_EMAILS` and `ADOPT_USERS` hold those emails. Unselecting everyone removes the variable. |
-| 26 | Run `select-groups.sh` from an account that has never used it | It grants that account Token Creator on the service account, waits through the `signBlob` delay, then lists groups. |
+| 26 | Run `select-groups.sh` from an account that has never used it | It grants that account Token Creator on the service account (without printing the IAM policy), waits through the `signBlob` delay, then lists groups. |
+| 37 | Run `select-groups.sh` and press Enter at the project prompt | It prints `Found the bw-scim-sync job in R.` and doesn't ask for a region. With the job in two regions, it shows a numbered list. In a project without the job, it fails with `Couldn't find the bw-scim-sync job in project ...`. `REGION=R bash select-groups.sh` skips the lookup. |
 
 Step numbers are kept stable so earlier results stay comparable; new steps get the next free number.
 

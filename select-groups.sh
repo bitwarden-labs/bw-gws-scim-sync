@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Choose from your Google Workspace directory instead of typing emails, and save the choice on the
-# deployed job. Run from Google Cloud Shell inside this folder, after README Steps 2 and 3:
+# deployed job. Run inside this folder (~/bw-gws-scim-sync with the installer), after README Steps 2-3:
 #   bash select-groups.sh                     Google groups to sync (GOOGLE_GROUPS)
 #   bash select-groups.sh --protected-users   users never revoked, deleted or adopted (PROTECTED_EMAILS)
 #   bash select-groups.sh --adopt-users       existing members the sync may adopt (ADOPT_USERS)
@@ -28,8 +28,28 @@ lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 ACCOUNT=$(gcloud config get-value account 2>/dev/null || true)
 [[ -n "$ACCOUNT" ]] || { echo "No gcloud account is signed in. Run: gcloud auth login"; exit 1; }
 ask PROJECT_ID "Google Cloud project ID" "$(gcloud config get-value project 2>/dev/null || true)"
-ask REGION "Region of the $JOB job" "$(gcloud config get-value run/region 2>/dev/null || true)"
 gcloud config set project "$PROJECT_ID" --quiet >/dev/null 2>&1
+if [[ -z "${REGION:-}" ]]; then
+  # Find the job's region, so it doesn't need typing.
+  REGIONS=()
+  while IFS= read -r r; do [[ -n "$r" ]] && REGIONS+=("$r"); done < <(gcloud run jobs list \
+    --filter "metadata.name=$JOB" --format 'value(region)' 2>/dev/null || true)
+  if (( ${#REGIONS[@]} == 1 )); then
+    REGION=${REGIONS[0]}
+    echo "Found the $JOB job in $REGION."
+  elif (( ${#REGIONS[@]} > 1 )); then
+    echo "The $JOB job exists in more than one region:"
+    for i in "${!REGIONS[@]}"; do echo "  $((i + 1))) ${REGIONS[$i]}"; done
+    read -r -p "Number of the region to use [1]: " choice
+    choice=${choice:-1}
+    [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#REGIONS[@]} )) \
+      || { echo "Choose a number from the list." >&2; exit 1; }
+    REGION=${REGIONS[$((choice - 1))]}
+  else
+    echo "Couldn't find the $JOB job in project $PROJECT_ID. Check the project, or run setup.sh first (README Step 2)." >&2
+    exit 1
+  fi
+fi
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -59,8 +79,11 @@ fi
 # Lets you read the directory with the sync's read-only access (keyless, as the job does).
 MEMBER="user:$ACCOUNT"
 [[ "$ACCOUNT" == *.gserviceaccount.com ]] && MEMBER="serviceAccount:$ACCOUNT"
-gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" --member "$MEMBER" \
-  --role roles/iam.serviceAccountTokenCreator >/dev/null
+if ! gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" --member "$MEMBER" \
+  --role roles/iam.serviceAccountTokenCreator >/dev/null 2>"$WORK/err"; then
+  cat "$WORK/err" >&2
+  exit 1
+fi
 
 if [[ ! -x .venv/bin/python ]]; then
   echo "Installing the tool's Python dependencies (first run only)..."

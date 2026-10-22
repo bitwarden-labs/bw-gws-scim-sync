@@ -130,9 +130,16 @@ A new service account can take a minute or two to become usable. If the second c
 
 ## 5. Build and deploy the job
 
-The job is built from the `bw-gws-scim-sync` folder. Upload and unzip it in Cloud Shell as in
-[README Step 2](../README.md#step-2-set-up-google-cloud), and run the commands below from inside
-the folder.
+The job is built from the `bw-gws-scim-sync` folder. To download it without running `setup.sh`,
+run the installer with `BW_SYNC_SKIP_SETUP=1`:
+
+```bash
+BW_SYNC_SKIP_SETUP=1 bash <(curl -fsSL https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.0.0/install.sh)
+cd ~/bw-gws-scim-sync
+```
+
+Or upload and unzip it as in [README Step 2](../README.md#step-2-set-up-google-cloud) (**Other ways
+to get the tool**). Run the commands below from inside the folder.
 
 **Before you build:** builds run as the Compute Engine default service account,
 `PROJECT_NUMBER-compute@developer.gserviceaccount.com`. Many organizations remove its default
@@ -270,7 +277,8 @@ delete the `bw-scim-sync` Artifact Registry repository.
 
 | `setup.sh` step | Section here |
 |---|---|
-| Checks the gcloud account and project, asks for the values | Values used below |
+| `install.sh` downloads the folder, then starts `setup.sh` | Step 5, downloading the folder |
+| Checks the gcloud account and project, asks for the values (on a rerun, the region defaults to the deployed job's) | Values used below |
 | On a rerun, reads the deployed job's environment variables, the schedule and whether the secret exists, and offers them as defaults | Console: the job's **Configuration** tab and the scheduler job. gcloud: `gcloud run jobs describe bw-scim-sync --region $REGION` and `gcloud scheduler jobs describe bw-scim-sync-schedule --location $REGION` |
 | Billing check | 1 |
 | `==> Enabling APIs` | 2 |

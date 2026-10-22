@@ -203,8 +203,8 @@ The sync is careful with what's already in your organization:
 
 **Sync now.** See [Run the sync](#1-run-the-sync).
 
-**Change which groups are synced.** In Cloud Shell, in the folder you set up from, run
-`bash select-groups.sh`, change the ticks, save, and accept the dry run it offers. Read the dry run
+**Change which groups are synced.** In Cloud Shell (or the terminal you set up from), run
+`cd ~/bw-gws-scim-sync && bash select-groups.sh`, change the ticks, save, and accept the dry run it offers. Read the dry run
 before the next scheduled run: members who are only in groups you removed get revoked. If the plan
 isn't what you want, run `select-groups.sh` again, or pause syncing (below) while you sort it out.
 
@@ -239,8 +239,15 @@ Or run `bash setup.sh` again and change only the schedule.
 gcloud run jobs update bw-scim-sync --region YOUR_REGION --update-env-vars DRY_RUN=true
 ```
 
-**Update to a new version.** Upload and unzip the new version in Cloud Shell, then run
-`bash setup.sh` from its folder. Your settings, including `DRY_RUN`, are kept.
+**Update to a new version.** Run the installer again with the new version number, for example
+`v1.1.0`:
+```
+bash <(curl -fsSL https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.1.0/install.sh)
+```
+It replaces the files in `~/bw-gws-scim-sync` and runs `setup.sh`, which deploys the new version.
+Press **Enter** at each prompt to keep your values. Your settings, including `DRY_RUN`, are kept.
+If you installed from the zip instead, upload and unzip the new version, then run `bash setup.sh`
+from its folder.
 
 **Remove the sync completely**
 ```
@@ -319,7 +326,9 @@ Find the error in the run's log (see [Read the log](#3-read-the-log)).
 | `Error calling the IAM signBlob API ... 403` | The service account can't sign its own tokens. Run `bash setup.sh` again. If you just ran it, wait a few minutes: new permissions take time to apply. |
 | `SCIM request failed: 401` | The SCIM API key is wrong or was rotated. See **Rotate the SCIM API key** under [Everyday tasks](#everyday-tasks). |
 | `GOOGLE_GROUPS must list at least one Google group email` | No groups are chosen yet. Run `bash select-groups.sh` (README Step 4). |
-| `select-groups.sh`: `Couldn't find the bw-scim-sync job` | Check the region you entered. If you never ran `setup.sh` (or the manual setup), do README Step 2 first. |
+| `select-groups.sh`: `Couldn't find the bw-scim-sync job in project ...` | Check the project you confirmed. If you never ran `setup.sh` (or the manual setup), do README Step 2 first. If you set `REGION` yourself, check it. |
+| The installer says `Couldn't download bitwarden-labs/bw-gws-scim-sync` | Check the version in the command exists. If the repository isn't public, run `gh auth login` and try again, or use the zip (README Step 2, **Other ways to get the tool**). |
+| The installer says `... exists and isn't a copy of this tool` | Another folder is already at `~/bw-gws-scim-sync`. Move it, or install elsewhere with `BW_SYNC_DIR=~/other-folder` before `bash <(curl ...)`. |
 | `select-groups.sh`: `Google rejected the directory access` | README Step 3 is missing or not active yet. Wait a few minutes and run it again. |
 | `select-groups.sh`: `Waiting for permission to sign as the service account` | Normal the first time: the script just gave your account access, which takes a minute or two to apply. |
 | `Synced groups have no active members` (exit code 2) | The groups are empty, or contain only suspended or outside users. Check `GOOGLE_GROUPS`. |
