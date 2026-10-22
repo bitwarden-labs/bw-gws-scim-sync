@@ -116,6 +116,9 @@ class BitwardenScim:
         self._call("PATCH", f"/Groups/{group_id}", json={"schemas": [PATCH_SCHEMA], "Operations": ops})
         return {"strategy": "patch"}
 
+    def delete_group(self, group_id: str) -> None:
+        self._call("DELETE", f"/Groups/{group_id}")
+
     def set_group_external_id(self, group_id: str, external_id: str) -> None:
         """Bitwarden ignores externalId on PUT /Groups, so linking an existing group needs PATCH."""
         body = {"schemas": [PATCH_SCHEMA],

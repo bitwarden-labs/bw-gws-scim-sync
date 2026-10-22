@@ -63,6 +63,7 @@ bw-scim-sync → Logs** for all runs). Select an entry's arrow to expand it, the
 | `DRY_RUN is on: no changes were made` | Only in a dry run. Nothing below this happens. |
 | `Invited user`, `Restored user`, `Adopted user` | A person was invited, restored or taken over. `email` shows who. |
 | `Created group`, `Updated group`, `Linked group` | A Bitwarden group was created or its members replaced. `group` and `members` show which and how many. |
+| `Deleted group` | A Bitwarden group was deleted because its Google group is in `DELETE_GROUPS`. `group` shows which. |
 | `Revoked user`, `Removed user` | A person lost access. `email` shows who. |
 | `ERROR` entries | A change failed. The entry includes the Bitwarden status code. |
 | `Sync finished` | `errors: 0` means every change was applied. |
@@ -86,6 +87,7 @@ In the Bitwarden web app, open the **Admin Console** for your organization.
 | `Revoked user` | **Members**, **Revoked** tab | The person, with status **Revoked**. They can't use the organization's items until restored. |
 | `Removed user` | **Members** | The person is no longer listed. |
 | `Created group`, `Updated group` | **Groups** | The group, with the same name as in Google. Open it and check the **Members** tab. |
+| `Deleted group` | **Groups** | The group is no longer listed. Its former members are still on **Members**, unless they were also revoked. |
 
 ## Read the sync plan
 
@@ -99,6 +101,7 @@ does. Expand it, then **jsonPayload → plan**:
 | `revoke` / `delete` | Members who lose access. |
 | `adopt_users` | Existing members the sync takes over (only with `ADOPT_USERS`). |
 | `groups` | Bitwarden groups that are created or updated, with their member counts. |
+| `delete_groups` | Bitwarden groups that are deleted (only with `DELETE_GROUPS`). |
 | `warnings` | Things the sync skipped on purpose. Read these. |
 
 Every person and group comes with a **reason**, so you can check each change:
@@ -112,6 +115,7 @@ Every person and group comes with a **reason**, so you can check each change:
 | `no longer in this Google Workspace (deleted, or moved out)` | Revoked because their Google account is gone. |
 | `matches a Google user by email and ADOPT_USERS allows it` | Adopted (see `ADOPT_USERS`). |
 | `no Bitwarden group yet` / `linked to this Google group` | A group is created, or updated because the sync manages it. |
+| `removed from GOOGLE_GROUPS and listed in DELETE_GROUPS` | A group is deleted (see [Stop syncing a group](#everyday-tasks)). |
 | `same name, taken over through ADOPT_GROUPS` | An existing group with the same name is taken over (see `ADOPT_GROUPS`). |
 
 `select-groups.sh` shows the same plan as one line per change, for example:
@@ -196,17 +200,38 @@ The sync is careful with what's already in your organization:
   not deleted. They lose access, but an admin can restore them, and the sync restores them
   automatically if they return to a synced group.
 - **Name and email changes in Google aren't sent to Bitwarden.**
-- **Removing a group from `GOOGLE_GROUPS` leaves its Bitwarden group in place.** Delete it in the
-  Admin Console if you no longer need it.
+- **When you stop syncing a Google group, its Bitwarden group stays, unless you choose to delete
+  it.** `select-groups.sh` asks when you untick a group. Kept groups are no longer updated. A deleted
+  group loses its collection access; its members stay in the organization, but anyone who is in no
+  other synced group is revoked.
 
 ## Everyday tasks
 
 **Sync now.** See [Run the sync](#1-run-the-sync).
 
 **Change which groups are synced.** In Cloud Shell (or the terminal you set up from), run
-`cd ~/bw-gws-scim-sync && bash select-groups.sh`, change the ticks, save, and accept the dry run it offers. Read the dry run
-before the next scheduled run: members who are only in groups you removed get revoked. If the plan
-isn't what you want, run `select-groups.sh` again, or pause syncing (below) while you sort it out.
+`cd ~/bw-gws-scim-sync && bash select-groups.sh`, change the ticks, save, and accept the dry run it
+offers. Read the dry run before the next scheduled run: members who are only in groups you removed
+get revoked. If the plan isn't what you want, run `select-groups.sh` again, or pause syncing (below)
+while you sort it out.
+
+**Stop syncing a group and delete its Bitwarden group.**
+1. Run `cd ~/bw-gws-scim-sync && bash select-groups.sh` and untick the group.
+2. Answer **y** to `Also delete the Bitwarden groups of the groups you removed?`
+3. Check what it will save (`GOOGLE_GROUPS` without the group, and `DELETE_GROUPS` with it), then
+   answer **y**.
+4. Accept the dry run. It shows `Delete   group NAME`, and `Revoke` for anyone who was only in that
+   group.
+5. The next run deletes the group (if `DRY_RUN` is `false`). The log shows `Deleted group`, and the
+   group disappears from **Groups** in the Admin Console.
+
+You can untick every group this way. The sync then deletes those groups and revokes every member it
+manages, so check the dry run, and raise `MAX_REMOVALS` for that run if needed. Only groups the sync
+created (linked to the Google group) are deleted; a group made by hand or by another tool is kept,
+with a warning. If you tick a group again later, it's taken out of `DELETE_GROUPS` and recreated.
+
+If you answered **n** and change your mind, delete the group in the Admin Console, or add the Google
+group's email to `DELETE_GROUPS` (see [Settings](#settings)).
 
 **Choose protected users or users to adopt.** Run `bash select-groups.sh --protected-users` or
 `bash select-groups.sh --adopt-users`. Put your organization owners in the protected list if you
@@ -291,7 +316,8 @@ For the three list settings, `select-groups.sh` lets you pick from your director
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `GOOGLE_GROUPS` | (none) | Comma-separated Google groups whose members get Bitwarden access, including members of groups nested inside them (see [Nested groups](#nested-groups)). Required; set it with `select-groups.sh` or during setup. |
+| `GOOGLE_GROUPS` | (none) | Comma-separated Google groups whose members get Bitwarden access, including members of groups nested inside them (see [Nested groups](#nested-groups)). Required, unless `DELETE_GROUPS` is set while you remove the last groups; set it with `select-groups.sh` or during setup. |
+| `DELETE_GROUPS` | (empty) | Comma-separated Google group emails whose Bitwarden group the sync deletes, if the sync created it. Groups also in `GOOGLE_GROUPS` are never deleted. `select-groups.sh` sets it when you untick a group and choose to delete it. Entries can stay after the group is gone: they then do nothing. |
 | `DRY_RUN` | `true` | When `true`, the job only logs what it would do. |
 | `REMOVAL_ACTION` | `revoke` | What happens to members who leave: `revoke`, `delete` (remove from the organization), or `none`. |
 | `MAX_REMOVALS` | `10` | If a run would remove more members than this, it stops without changing anything. This protects against mistakes such as a mistyped group. Raise it for a planned bulk change. |
@@ -335,6 +361,8 @@ Find the error in the run's log (see [Read the log](#3-read-the-log)).
 | `Planned removals exceed MAX_REMOVALS` (exit code 3) | Read the plan in the log. If the removals are intended, raise `MAX_REMOVALS` for one run, then set it back. |
 | `Bitwarden already has a group named ...` | A same-named group existed before the sync. See [Existing members and groups](#existing-members-and-groups). |
 | `skipped N member(s) that are suspended or not users of this Workspace` | Expected for suspended users and outside addresses, including those in nested groups. No action needed. |
+| `... is in DELETE_GROUPS, but the Bitwarden group "..." isn't linked to it` | The same-named Bitwarden group wasn't created by the sync, so it isn't deleted. Delete it in the Admin Console if you no longer need it, then remove the email from `DELETE_GROUPS`. |
+| `... is in DELETE_GROUPS but no longer exists in Google Workspace` | The Google group was deleted before the sync could find its Bitwarden group. Delete the Bitwarden group in the Admin Console if it's still there, then remove the email from `DELETE_GROUPS`. |
 | `exists in Bitwarden but is revoked and was not provisioned by this sync` | A hand-invited member was revoked by an admin. Restore them in the Admin Console, or use `ADOPT_USERS`. |
 | A person you expected isn't in the plan | Check that they're an active user of your Workspace, and that they're in a synced group or a group nested inside one. The picker's member counts only include direct members. |
 | Setup stops with `has no billing account linked` | Link a billing account to the project, then run the script again. |

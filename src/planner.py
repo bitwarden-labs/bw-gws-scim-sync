@@ -28,6 +28,7 @@ class Plan:
     adopt_users: list[tuple[str, BwUser]] = field(default_factory=list)  # (google user id, member)
     id_map: dict[str, str] = field(default_factory=dict)  # google user id -> bitwarden member id
     warnings: list[str] = field(default_factory=list)
+    delete_groups: list[BwGroup] = field(default_factory=list)  # linked to a Google group in DELETE_GROUPS
     reasons: dict[str, str] = field(default_factory=dict)  # lowercased email -> why it changes
 
     @property
@@ -53,6 +54,10 @@ class Plan:
                 }
                 for c in self.groups
             ],
+            "delete_groups": [
+                {"group": g.display_name, "reason": "removed from GOOGLE_GROUPS and listed in DELETE_GROUPS"}
+                for g in self.delete_groups
+            ],
             "warnings": self.warnings,
         }
 
@@ -73,6 +78,7 @@ def build_plan(
     adopt_groups: set[str] | None = None,
     adopt_all_users: bool = False,
     adopt_user_emails: set[str] | None = None,
+    removed_groups: list[GoogleGroup] | None = None,
 ) -> Plan:
     protected = {e.lower() for e in (protected_emails or set())}
     adopt = {e.lower() for e in (adopt_groups or set())}
@@ -184,6 +190,24 @@ def build_plan(
                 f'{group.email}: Bitwarden already has a group named "{same_name.display_name}" '
                 "that this sync didn't create; skipping it. Add the Google group to ADOPT_GROUPS "
                 "to let the sync take it over (its members will be replaced)."
+            )
+
+    # DELETE_GROUPS: only delete a Bitwarden group linked to that Google group, so groups created by
+    # hand or by another tool are never deleted. Nothing linked means it's already gone.
+    synced_ids = {g.id for g in google_groups}
+    for group in removed_groups or []:
+        if group.id in synced_ids:
+            continue
+        linked = bw_groups_by_ext.get(group.id)
+        if linked is not None:
+            plan.delete_groups.append(linked)
+            continue
+        same_name = bw_groups_by_name.get(group.name.lower())
+        if same_name is not None:
+            plan.warnings.append(
+                f'{group.email} is in DELETE_GROUPS, but the Bitwarden group "{same_name.display_name}" '
+                "isn't linked to it (this sync didn't create it); not deleting it. Delete it in the "
+                "Admin Console if you no longer need it."
             )
 
     return plan

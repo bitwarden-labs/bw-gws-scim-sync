@@ -90,6 +90,12 @@ class FakeScim(BaseHTTPRequestHandler):
         STATE["requests"].append(("PATCH", res, body))
         self._send(204)
 
+    def do_DELETE(self):
+        _, res, rid = self._route()
+        del STATE[res.lower()][rid]
+        STATE["requests"].append(("DELETE", res, None))
+        self._send(204)
+
 
 class ScimClientTests(unittest.TestCase):
     @classmethod
@@ -139,6 +145,22 @@ class ScimClientTests(unittest.TestCase):
         apply(plan, scim)
         self.assertEqual([(m, r) for m, r, _ in STATE["requests"]], [("PUT", "Groups")])
 
+
+    def test_removed_group_is_deleted_only_when_linked(self):
+        scim = BitwardenScim(self.url, "test-key")
+        alice = GoogleUser("100000000000000000001", "alice@acme.com", "Alice", "A", "Alice A", False)
+        eng = GoogleGroup("g1", "eng@acme.com", "Engineering", {alice.id})
+        apply(build_plan({alice.id: alice}, [eng], [], []), scim)  # creates Engineering, linked to g1
+        scim.create_group("Finance", "", [])  # same name as a Google group, made by hand
+
+        removed = [GoogleGroup("g1", "eng@acme.com", "Engineering"), GoogleGroup("g2", "fin@acme.com", "Finance")]
+        plan = build_plan({alice.id: alice}, [], scim.list_users(), scim.list_groups(), removed_groups=removed)
+        self.assertEqual([g.display_name for g in plan.delete_groups], ["Engineering"])
+        self.assertTrue(any("Finance" in w and "not deleting" in w for w in plan.warnings))
+        self.assertEqual(apply(plan, scim), 0)
+        self.assertEqual([g["displayName"] for g in STATE["groups"].values()], ["Finance"])
+        # Alice was only in Engineering, so she's revoked in the same run.
+        self.assertFalse(next(iter(STATE["users"].values()))["active"])
 
     def test_patch_group_replaces_name_and_members(self):
         scim = BitwardenScim(self.url, "test-key")

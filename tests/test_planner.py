@@ -137,6 +137,33 @@ class PlannerTests(unittest.TestCase):
                           adopt_all_users=True)
         self.assertIn("ADOPT_USERS", plan.summary()["adopt_users"][0]["reason"])
 
+    def test_removed_group_linked_to_google_is_deleted(self):
+        bw_groups = [BwGroup("bwg", "grp1", "Engineering"), BwGroup("bwf", "grp2", "Finance")]
+        finance = GoogleGroup("grp2", "fin@acme.com", "Finance", {ALICE})
+        plan = build_plan(google_users(), [finance], [], bw_groups,
+                          removed_groups=[GoogleGroup("grp1", "eng@acme.com", "Engineering")])
+        self.assertEqual([g.id for g in plan.delete_groups], ["bwg"])
+        self.assertEqual(plan.summary()["delete_groups"][0]["group"], "Engineering")
+        self.assertIn("DELETE_GROUPS", plan.summary()["delete_groups"][0]["reason"])
+
+    def test_removed_group_still_synced_or_not_linked_is_kept(self):
+        bw_groups = [BwGroup("bwg", "grp1", "Engineering"), BwGroup("bwm", "other-tool-id", "Marketing")]
+        plan = build_plan(google_users(), [group(ALICE)], [], bw_groups, removed_groups=[
+            GoogleGroup("grp1", "eng@acme.com", "Engineering"),  # still in GOOGLE_GROUPS
+            GoogleGroup("grp3", "mkt@acme.com", "Marketing"),  # same name, not created by the sync
+            GoogleGroup("grp4", "ops@acme.com", "Ops"),  # no Bitwarden group: already deleted
+        ])
+        self.assertEqual(plan.delete_groups, [])
+        self.assertEqual(len(plan.warnings), 1)
+        self.assertIn("Marketing", plan.warnings[0])
+
+    def test_no_groups_left_revokes_every_managed_member(self):
+        bw = [BwUser("bw-a", ALICE, "alice@acme.com", True), BwUser("bw-h", None, "hand@acme.com", True)]
+        plan = build_plan(google_users(), [], bw, [BwGroup("bwg", "grp1", "Engineering")],
+                          removed_groups=[GoogleGroup("grp1", "eng@acme.com", "Engineering")])
+        self.assertEqual([u.email for u in plan.revoke], ["alice@acme.com"])
+        self.assertEqual([g.id for g in plan.delete_groups], ["bwg"])
+
 
 if __name__ == "__main__":
     unittest.main()

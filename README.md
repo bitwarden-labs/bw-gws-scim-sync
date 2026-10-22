@@ -228,7 +228,9 @@ it's waiting for permission, that's normal for a minute or two.
 If the arrow keys don't work in your terminal, the script falls back to a numbered list: type the
 numbers to select (for example `1,3,5-7`), `/text` to filter, and `s` to save.
 
-You can run `select-groups.sh` again at any time to change the groups.
+You can run `select-groups.sh` again at any time to change the groups. When you untick a group, it
+asks whether to delete its Bitwarden group as well; see
+[Stop syncing a group](docs/ADMIN_GUIDE.md#everyday-tasks).
 
 ## Step 5: Test with a dry run
 

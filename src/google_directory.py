@@ -40,6 +40,12 @@ def build_credentials(sa_email: str, admin_email: str, sa_key_json: str | None =
     )
 
 
+class DirectoryError(RuntimeError):
+    def __init__(self, path: str, status: int, body: str):
+        super().__init__(f"Google Directory API {path} failed: {status} {body[:500]}")
+        self.status = status
+
+
 class GoogleDirectory:
     def __init__(self, credentials):
         from google.auth.transport.requests import AuthorizedSession
@@ -49,7 +55,7 @@ class GoogleDirectory:
     def _get(self, path: str, params: dict) -> dict:
         resp = request_with_retry(self.session, "GET", f"{BASE}{path}", params=params)
         if resp.status_code >= 400:
-            raise RuntimeError(f"Google Directory API {path} failed: {resp.status_code} {resp.text[:500]}")
+            raise DirectoryError(path, resp.status_code, resp.text)
         return resp.json()
 
     def _paged(self, path: str, params: dict, key: str):
@@ -82,6 +88,16 @@ class GoogleDirectory:
              "members": int(g.get("directMembersCount", 0))}
             for g in self._paged("/groups", {"customer": "my_customer", "maxResults": 200}, "groups")
         ]
+
+    def find_group(self, group_email: str) -> GoogleGroup | None:
+        """The group without its members, or None if it no longer exists."""
+        try:
+            g = self._get(f"/groups/{group_email}", {})
+        except DirectoryError as e:
+            if e.status == 404:
+                return None
+            raise
+        return GoogleGroup(id=g["id"], email=g["email"], name=g.get("name") or g["email"])
 
     def get_group(self, group_email: str) -> GoogleGroup:
         g = self._get(f"/groups/{group_email}", {})

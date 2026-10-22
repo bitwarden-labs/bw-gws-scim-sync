@@ -53,7 +53,7 @@ flowchart TB
     subgraph ENV["Environment variables on the Cloud Run job bw-scim-sync"]
         direction LR
         E1["Asked by setup.sh<br/>BW_SCIM_URL<br/>GOOGLE_ADMIN_EMAIL<br/>GOOGLE_SA_EMAIL<br/>GOOGLE_GROUPS<br/>DRY_RUN=true, first deploy only"]
-        E2["Picked from your directory<br/>GOOGLE_GROUPS<br/>PROTECTED_EMAILS<br/>ADOPT_USERS"]
+        E2["Picked from your directory<br/>GOOGLE_GROUPS<br/>DELETE_GROUPS, for unticked groups<br/>PROTECTED_EMAILS<br/>ADOPT_USERS"]
         E3["Optional<br/>DRY_RUN · REMOVAL_ACTION<br/>MAX_REMOVALS · ADOPT_GROUPS<br/>GROUP_UPDATE_MODE"]
         E4["BW_SCIM_API_KEY<br/>linked to the secret"]
     end
@@ -143,7 +143,11 @@ sequenceDiagram
     A->>S: Tick, untick, Enter
     S->>A: Groups added and removed
     A->>S: y to save
-    S->>R: Save GOOGLE_GROUPS, or PROTECTED_EMAILS<br/>or ADOPT_USERS with the options
+    opt Groups unticked
+        S->>A: Also delete their Bitwarden groups?
+        A->>S: y adds them to DELETE_GROUPS
+    end
+    S->>R: Save GOOGLE_GROUPS and DELETE_GROUPS, or PROTECTED_EMAILS<br/>or ADOPT_USERS with the options
     opt Dry run
         S->>A: Planned changes. Nothing changes in Bitwarden
     end

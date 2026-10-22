@@ -24,6 +24,13 @@ ask() {  # ask VAR "Prompt" [default]
   [[ -n "${!var}" ]] || { echo "A value is required."; exit 1; }
 }
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+list_op() {  # list_op minus|plus "a,b" "c,d": comma-separated email lists, compared case-insensitively
+  python3 -c 'import sys
+op, a, b = sys.argv[1:4]
+split = lambda s: list(dict.fromkeys(e.strip().lower() for e in s.split(",") if e.strip()))
+a, b = split(a), split(b)
+print(",".join([e for e in a if e not in b] if op == "minus" else a + [e for e in b if e not in a]))' "$@"
+}
 
 ACCOUNT=$(gcloud config get-value account 2>/dev/null || true)
 [[ -n "$ACCOUNT" ]] || { echo "No gcloud account is signed in. Run: gcloud auth login"; exit 1; }
@@ -99,24 +106,55 @@ case $status in
   *) exit "$status" ;;
 esac
 CHOSEN=$(cat "$WORK/chosen")
-if [[ "$VAR" == GOOGLE_GROUPS && -z "$CHOSEN" ]]; then
-  echo "Select at least one group. Nothing was saved." >&2
-  exit 1
+
+# Unticked groups keep their Bitwarden group unless it's listed in DELETE_GROUPS.
+OLD_DELETE=${DELETE_GROUPS:-}
+NEW_DELETE=$OLD_DELETE
+if [[ "$VAR" == GOOGLE_GROUPS ]]; then
+  REMOVED=$(list_op minus "$CURRENT" "$CHOSEN")
+  if [[ -n "$REMOVED" ]]; then
+    echo
+    echo "Bitwarden keeps the groups of the Google groups you removed, unless you delete them."
+    echo "Deleting removes each group and its collection access. Its members stay in the organization,"
+    echo "but anyone left in no synced group is revoked."
+    read -r -p "Also delete the Bitwarden groups of the groups you removed? [y/N] " answer
+    [[ "$(lower "$answer")" == y* ]] && NEW_DELETE=$(list_op plus "$NEW_DELETE" "$REMOVED")
+  fi
+  NEW_DELETE=$(list_op minus "$NEW_DELETE" "$CHOSEN")  # a group ticked again is never deleted
+  if [[ -z "$CHOSEN" && -z "$NEW_DELETE" ]]; then
+    echo "Select at least one group, or delete the groups you removed. Nothing was saved." >&2
+    exit 1
+  fi
+  if [[ -z "$CHOSEN" ]]; then
+    echo "No groups are left: the sync will revoke every member it manages (MAX_REMOVALS still applies)."
+  fi
 fi
 
-read -r -p "Save this as $VAR on the $JOB job? [y/N] " answer
+SET=() UNSET=()
+if [[ -n "$CHOSEN" ]]; then SET+=("$VAR=$CHOSEN"); else UNSET+=("$VAR"); fi
+if [[ "$NEW_DELETE" != "$OLD_DELETE" ]]; then
+  if [[ -n "$NEW_DELETE" ]]; then SET+=("DELETE_GROUPS=$NEW_DELETE"); else UNSET+=(DELETE_GROUPS); fi
+fi
+echo
+echo "To save on the $JOB job:"
+for item in "${SET[@]}"; do echo "  $item"; done
+for item in "${UNSET[@]}"; do echo "  remove $item"; done
+read -r -p "Save? [y/N] " answer
 [[ "$(lower "$answer")" == y* ]] || { echo "Nothing was saved."; exit 0; }
-if [[ -z "$CHOSEN" ]]; then
-  gcloud run jobs update "$JOB" --region "$REGION" --remove-env-vars "$VAR" --quiet >/dev/null
-else
-  gcloud run jobs update "$JOB" --region "$REGION" --update-env-vars "^;^$VAR=$CHOSEN" --quiet >/dev/null
+if (( ${#SET[@]} )); then
+  gcloud run jobs update "$JOB" --region "$REGION" --update-env-vars "^;^$(IFS=';'; echo "${SET[*]}")" \
+    --quiet >/dev/null
+fi
+if (( ${#UNSET[@]} )); then
+  gcloud run jobs update "$JOB" --region "$REGION" --remove-env-vars "$(IFS=,; echo "${UNSET[*]}")" \
+    --quiet >/dev/null
 fi
 echo "Saved. The next run uses it."
-export "$VAR=$CHOSEN"
+export "$VAR=$CHOSEN" DELETE_GROUPS="$NEW_DELETE"
 
 read -r -p "Run a dry run now to see what the sync would do? Nothing changes in Bitwarden. [Y/n] " answer
 [[ "$(lower "$answer")" == n* ]] && exit 0
-if [[ -z "${GOOGLE_GROUPS:-}" ]]; then
+if [[ -z "${GOOGLE_GROUPS:-}" && -z "${DELETE_GROUPS:-}" ]]; then
   echo "No groups are selected yet. Run: bash select-groups.sh"
   exit 0
 fi
@@ -137,6 +175,9 @@ for line in sys.stdin:
                 changes += 1
         for group in entry["plan"]["groups"]:
             print(f"  Group    {group['group']}: {group['action']}, {group['members']} member(s); {group['reason']}")
+            changes += 1
+        for group in entry["plan"]["delete_groups"]:
+            print(f"  Delete   group {group['group']}: {group['reason']}")
             changes += 1
         if not changes:
             print("  Nothing to change.")

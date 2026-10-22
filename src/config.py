@@ -33,6 +33,7 @@ class Config:
     google_sa_email: str
     google_sa_key_json: str | None
     google_groups: list[str]
+    delete_groups: list[str]
     dry_run: bool
     removal_action: str
     protected_emails: set[str]
@@ -57,7 +58,11 @@ class Config:
             else {e.lower() for e in _list("ADOPT_USERS")}
         )
         groups = _list("GOOGLE_GROUPS")
-        if not groups:
+        synced = {g.lower() for g in groups}
+        delete_groups = [g.lower() for g in _list("DELETE_GROUPS") if g.lower() not in synced]
+        # No groups at all is only valid while deleting the last ones: it then revokes every member
+        # the sync manages (MAX_REMOVALS still applies).
+        if not groups and not delete_groups:
             raise SystemExit(
                 "GOOGLE_GROUPS must list at least one Google group email. "
                 "Choose groups with: bash select-groups.sh"
@@ -69,6 +74,7 @@ class Config:
             google_sa_email=os.environ.get("GOOGLE_SA_EMAIL", "").strip(),
             google_sa_key_json=os.environ.get("GOOGLE_SA_KEY_JSON") or None,
             google_groups=groups,
+            delete_groups=delete_groups,
             dry_run=_bool("DRY_RUN", True),
             removal_action=action,
             protected_emails={e.lower() for e in _list("PROTECTED_EMAILS")},

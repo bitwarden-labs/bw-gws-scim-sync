@@ -18,13 +18,15 @@ python -m unittest discover -s tests -t . -v
 
 - `tests/test_planner.py` covers the decision logic: who gets invited, restored, revoked or deleted;
   how suspended Google users, protected emails and other identity providers' members are handled;
-  how groups are matched; and `ADOPT_GROUPS` / `ADOPT_USERS`.
+  how groups are matched; `ADOPT_GROUPS` / `ADOPT_USERS`; and which groups `DELETE_GROUPS` deletes.
+- `tests/test_config.py` covers settings that depend on each other: `GOOGLE_GROUPS` may only be
+  empty while `DELETE_GROUPS` is set, and a synced group is never deleted.
 - `tests/test_picker.py` covers the directory picker used by `select-groups.sh`: selection parsing
   (`1,3,5-7`), filtering, the numbered-list flow, keeping saved emails missing from the directory,
   and how groups and users are listed.
 - `tests/test_scim_client.py` runs the SCIM client and the full apply step against an in-process fake
   SCIM server. It covers pagination, invites, revoke, group create, group PUT and PATCH, linking
-  adopted groups and users, and an idempotent second run.
+  adopted groups and users, deleting a linked group, and an idempotent second run.
 
 The fake server mirrors the bitwarden/server behaviors listed in section 5 (for example, group
 responses never include members, and PUT ignores `externalId`). A passing run proves the code is
@@ -192,6 +194,10 @@ Test these in a fresh project.
 | 25 | `select-groups.sh --protected-users`, pick T4; then `--adopt-users`, pick T6 | `PROTECTED_EMAILS` and `ADOPT_USERS` hold those emails. Unselecting everyone removes the variable. |
 | 26 | Run `select-groups.sh` from an account that has never used it | It grants that account Token Creator on the service account (without printing the IAM policy), waits through the `signBlob` delay, then lists groups. |
 | 37 | Run `select-groups.sh` and press Enter at the project prompt | It prints `Found the bw-scim-sync job in R.` and doesn't ask for a region. With the job in two regions, it shows a numbered list. In a project without the job, it fails with `Couldn't find the bw-scim-sync job in project ...`. `REGION=R bash select-groups.sh` skips the lookup. |
+| 38 | Sync two groups, then untick one in `select-groups.sh` and answer **y** to delete | It shows `To save: GOOGLE_GROUPS=<other group>` and `DELETE_GROUPS=<unticked group>`. The dry run shows `Delete   group NAME` and `Revoke` for people only in that group. The next real run logs `Deleted group`; the group is gone from **Groups**. |
+| 39 | Untick a group and answer **n** | Only `GOOGLE_GROUPS` changes. The Bitwarden group stays and is no longer updated. |
+| 40 | Untick the only synced group and answer **y**; then try again answering **n** | With **y**: it warns `No groups are left`, saves `remove GOOGLE_GROUPS` and `DELETE_GROUPS`, and the dry run deletes the group and revokes every managed member (exit code 3 if more than `MAX_REMOVALS`). With **n**: `Select at least one group, or delete the groups you removed. Nothing was saved.` |
+| 41 | Tick a group that's in `DELETE_GROUPS` again | It's taken out of `DELETE_GROUPS`, and the next run recreates its Bitwarden group. A same-named group created by hand is never deleted: the plan warns `isn't linked to it`. |
 
 Step numbers are kept stable so earlier results stay comparable; new steps get the next free number.
 
@@ -215,12 +221,14 @@ These behaviors were checked against `bitwarden_license/src/Scim/` in `bitwarden
 | `GET /Users` and `GET /Groups` paginate with `startIndex` (1-based) and `count` (no maximum); the list key is lowercase `resources` | source, live | Step 1 |
 | `GET /Users` lists every member, including owners and manually invited members, with `externalId` and `emails` | live (29 members, 2026-10-20) | Step 1 plan and T4 |
 | Bitwarden rejects revoking or deleting the last confirmed owner with 400 | source | — |
+| `DELETE /Groups/{id}` deletes a group and returns 204 (`Controllers/v2/GroupsController.cs`, checked on `main` 2026-10-22) | source | Steps 38–41 |
 | Directory Connector (Google Workspace source) stores the Google user ID as `externalId` | open | Sync a test org with Directory Connector first, then run this tool. Users should match without new invites. |
 
 Known limits, which are expected behavior rather than bugs:
 
 - Name and email changes in Google aren't pushed to Bitwarden.
-- Removing a group from `GOOGLE_GROUPS` leaves its Bitwarden group in place.
+- Removing a group from `GOOGLE_GROUPS` leaves its Bitwarden group in place unless it's added to
+  `DELETE_GROUPS` (`select-groups.sh` asks).
 - Collection access is never managed.
 
 ## 6. Reading logs

@@ -56,6 +56,14 @@ def apply(plan: Plan, scim: BitwardenScim, group_update_mode: str = "put") -> in
             errors += 1
             log("ERROR", "Group sync failed", group=g.name, error=str(e))
 
+    for g in plan.delete_groups:
+        try:
+            scim.delete_group(g.id)
+            log("INFO", "Deleted group", group=g.display_name)
+        except ScimError as e:
+            errors += 1
+            log("ERROR", "Delete group failed", group=g.display_name, status=e.status, error=str(e))
+
     for bw in plan.revoke:
         try:
             scim.set_active(bw.id, False)
@@ -83,14 +91,28 @@ def run() -> int:
 
     google_users = directory.list_users()
     google_groups = [directory.get_group(email) for email in cfg.google_groups]
+    removed_groups, missing = [], []
+    for email in cfg.delete_groups:
+        group = directory.find_group(email)
+        if group is None:
+            missing.append(email)
+        else:
+            removed_groups.append(group)
     plan = build_plan(
         google_users, google_groups, scim.list_users(), scim.list_groups(),
         removal_action=cfg.removal_action, protected_emails=cfg.protected_emails,
         adopt_groups=cfg.adopt_groups,
         adopt_all_users=cfg.adopt_all_users, adopt_user_emails=cfg.adopt_user_emails,
+        removed_groups=removed_groups,
     )
+    for email in missing:
+        plan.warnings.append(
+            f"{email} is in DELETE_GROUPS but no longer exists in Google Workspace, so its Bitwarden "
+            "group can't be found. Delete that group in the Admin Console if it's still there, then "
+            "remove the email from DELETE_GROUPS."
+        )
 
-    if not any(g.member_ids for g in google_groups):
+    if cfg.google_groups and not any(g.member_ids for g in google_groups):
         log("ERROR", "Synced groups have no active members; refusing to run (check GOOGLE_GROUPS)")
         return 2
     if plan.removal_count > cfg.max_removals:
