@@ -6,8 +6,8 @@ the Google groups you choose and uses Bitwarden's SCIM endpoint to:
 - invite new group members to your Bitwarden organization,
 - revoke members who leave those groups or are suspended or deleted in Google,
 - restore members who return, and
-- create a matching Bitwarden group for each Google group and keep its membership current. Members
-  of nested groups are included.
+- create a matching Bitwarden group for each Google group and keep its membership current. People
+  in groups nested inside a chosen group count as its members.
 
 It runs in your own Google Cloud project as a small scheduled job, so you don't need a server.
 Setup takes about 15 minutes.
@@ -16,10 +16,15 @@ Setup takes about 15 minutes.
 [Step 1](#step-1-enable-scim-in-bitwarden) · [Step 2](#step-2-set-up-google-cloud) ·
 [Step 3](#step-3-allow-the-sync-to-read-your-directory) · [Step 4](#step-4-choose-the-groups-to-sync) ·
 [Step 5](#step-5-test-with-a-dry-run) · [Step 6](#step-6-turn-on-syncing) ·
-[Existing members and groups](#existing-members-and-groups) ·
-[What users and admins see](#what-users-and-admins-see) · [Settings](#settings) ·
-[Everyday tasks](#everyday-tasks) · [Self-hosted Bitwarden](#self-hosted-bitwarden) ·
-[Troubleshooting](#troubleshooting)
+[After setup](#after-setup)
+
+| Guide | For |
+|---|---|
+| This README | Setting up the sync, Steps 1 to 6. |
+| [Admin guide](docs/ADMIN_GUIDE.md) | Checking that a sync worked, reading the plan, which people are synced (including nested groups), settings, everyday tasks and troubleshooting. |
+| [Manual setup](docs/MANUAL_SETUP.md) | Doing Step 2 by hand in the Google Cloud console instead of with `setup.sh`. |
+| [Architecture](docs/ARCHITECTURE.md) | Diagrams of the components, a sync run and the code. |
+| [Testing](docs/TESTING.md) | Validating the sync before release (maintainers). |
 
 ## How it works
 
@@ -62,63 +67,7 @@ flowchart LR
     JOB -- "plan and results" --> LOGS
 ```
 
-Where the settings live, and which script sets them. The job's settings are environment
-variables on the Cloud Run job; see [Settings](#settings) for what each one does.
-
-```mermaid
-flowchart TB
-    subgraph TOOLS["How you change them"]
-        direction LR
-        SETUP["setup.sh<br/>1 reads what's deployed<br/>2 asks, current values as defaults<br/>3 creates or updates in place"]
-        PICK["select-groups.sh<br/>reads the job's settings,<br/>checklist from your directory,<br/>saves one list"]
-        CON["Console, or<br/>gcloud run jobs update"]
-    end
-    subgraph ENV["Environment variables on the Cloud Run job bw-scim-sync"]
-        direction LR
-        E1["Asked by setup.sh<br/>BW_SCIM_URL<br/>GOOGLE_ADMIN_EMAIL<br/>GOOGLE_SA_EMAIL<br/>GOOGLE_GROUPS<br/>DRY_RUN=true, first deploy only"]
-        E2["Picked from your directory<br/>GOOGLE_GROUPS<br/>PROTECTED_EMAILS<br/>ADOPT_USERS"]
-        E3["Optional<br/>DRY_RUN · REMOVAL_ACTION<br/>MAX_REMOVALS · ADOPT_GROUPS<br/>GROUP_UPDATE_MODE"]
-        E4["BW_SCIM_API_KEY<br/>linked to the secret"]
-    end
-    SECRET[("Secret Manager<br/>bw-scim-api-key")]
-    SCHED["Cloud Scheduler<br/>schedule and time zone"]
-    SETUP <-- "reads and writes" --> E1
-    PICK <-- "reads and writes" --> E2
-    CON <-- "reads and writes any" --> E3
-    SETUP <-- "reads and writes" --> SCHED
-    SETUP -- "new key, if entered" --> SECRET
-    SECRET --> E4
-```
-
-What happens on each run:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant S as Cloud Scheduler
-    participant J as Cloud Run job
-    participant I as IAM Credentials API
-    participant O as Google sign-in
-    participant G as Directory API
-    participant B as Bitwarden SCIM
-    S->>J: Start the job
-    Note over J: SCIM API key is read from Secret Manager at start
-    J->>I: Sign a delegation token as bw-scim-sync
-    I-->>J: Signed token
-    J->>O: Exchange it for read-only directory access
-    O-->>J: Access token
-    J->>G: Read users and the chosen groups
-    G-->>J: Users, groups and nested members
-    J->>B: Read members and groups
-    B-->>J: Members and groups
-    Note over J: Compare and build the plan.<br/>Safety checks: MAX_REMOVALS, protected users, same-named groups
-    alt DRY_RUN is true
-        Note over J: Log the plan only
-    else DRY_RUN is false
-        J->>B: Invite, restore, update groups, revoke
-    end
-    Note over J: Every step is logged to Cloud Logging
-```
+More diagrams, including one sync run step by step, are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Before you start
 
@@ -136,7 +85,10 @@ Good to know before you choose groups:
 
 - Only **users of your Google Workspace** are synced. Group members with outside addresses (for
   example, a personal Gmail account added to a group) are skipped, and the log says so.
-- Nested groups are expanded: members of a group inside a synced group are included.
+- **Groups inside a synced group count too.** If `engineering@` contains the group `backend@`, the
+  people in `backend@` (at any depth) are invited and added to the Bitwarden group `Engineering`.
+  `backend@` doesn't get a Bitwarden group of its own unless you pick it as well. See
+  [Nested groups](docs/ADMIN_GUIDE.md#nested-groups).
 - **Use only one sync tool per Bitwarden organization.** If you use Bitwarden Directory Connector or
   another SCIM integration for this organization, turn it off first.
 
@@ -153,7 +105,7 @@ organization. Don't paste it into email, chat or tickets.
 ## Step 2: Set up Google Cloud
 
 The setup script does all of the Google Cloud work in one go. If your organization prefers to make
-each change by hand, follow [MANUAL_SETUP.md](MANUAL_SETUP.md) instead, then continue with Step 3.
+each change by hand, follow [docs/MANUAL_SETUP.md](docs/MANUAL_SETUP.md) instead, then continue with Step 3.
 
 1. Open [Google Cloud Shell](https://shell.cloud.google.com) and select your project at the top of
    the page.
@@ -232,8 +184,9 @@ bash select-groups.sh
 ```
 
 1. Enter your project and the job's region if asked.
-2. The script lists every group in your Google Workspace, with its member count. Groups that are
-   already synced are ticked.
+2. The script lists every group in your Google Workspace, with its number of direct members (a
+   group inside it counts as one). Groups that are already synced are ticked. You only need to pick
+   the top group: people in groups nested inside it are included.
 3. Select groups with the arrow keys and **Space**. Press **/** and type to filter the list (for
    example `eng`), then **Enter** to go back to the list.
 4. Press **Enter** to finish, or **q** to cancel without changes.
@@ -250,61 +203,23 @@ numbers to select (for example `1,3,5-7`), `/text` to filter, and `s` to save.
 
 You can run `select-groups.sh` again at any time to change the groups.
 
-```mermaid
-sequenceDiagram
-    actor A as You in Cloud Shell
-    participant S as select-groups.sh
-    participant R as Cloud Run job settings
-    participant G as Directory API
-    A->>S: bash select-groups.sh
-    S->>R: Read GOOGLE_ADMIN_EMAIL, GOOGLE_SA_EMAIL<br/>and the current list
-    S->>G: List groups, with the sync's read-only access
-    G-->>S: All groups and member counts
-    S->>A: Checklist, current groups ticked
-    A->>S: Tick, untick, Enter
-    S->>A: Groups added and removed
-    A->>S: y to save
-    S->>R: Save GOOGLE_GROUPS, or PROTECTED_EMAILS<br/>or ADOPT_USERS with the options
-    opt Dry run
-        S->>A: Planned changes. Nothing changes in Bitwarden
-    end
-```
-
 ## Step 5: Test with a dry run
 
-If you ran the dry run at the end of Step 4, you've already seen the plan. To run one on Google
-Cloud, which also shows that the scheduled job works:
+If you ran the dry run at the end of Step 4, you've already seen the plan. Run one on Google Cloud
+as well, which also shows that the job itself works:
 
 1. In Cloud Shell, run:
    ```
    gcloud run jobs execute bw-scim-sync --region YOUR_REGION --wait
    ```
-2. In the Google Cloud console, open **Cloud Run → Jobs → bw-scim-sync → Logs**.
-3. Find the **Sync plan** entry. It lists everything the sync would do:
-
-   | Field | Meaning |
-   |---|---|
-   | `create_users` | People who would get a Bitwarden invitation. |
-   | `reactivate` | Revoked members who would be restored. |
-   | `revoke` / `delete` | Members who would lose access. |
-   | `adopt_users` | Existing members the sync would take over (only with `ADOPT_USERS`). |
-   | `groups` | Bitwarden groups that would be created or updated, with their member counts. |
-   | `warnings` | Things the sync skipped on purpose. Read these. |
-
-   Every person and group comes with a **reason**, so you can check each change. For example:
-
-   | Reason | Meaning |
-   |---|---|
-   | `in Engineering, Finance` | Invited because they're in these synced groups. |
-   | `back in Engineering` | Restored because they returned to a synced group. |
-   | `no longer in any synced group` | Revoked because they left every synced group. |
-   | `suspended or archived in Google` | Revoked because their Google account is suspended or archived. |
-   | `no longer in this Google Workspace (deleted, or moved out)` | Revoked because their Google account is gone. |
-   | `matches a Google user by email and ADOPT_USERS allows it` | Adopted (see `ADOPT_USERS`). |
-   | `no Bitwarden group yet` / `linked to this Google group` | A group is created, or updated because the sync manages it. |
-   | `same name, taken over through ADOPT_GROUPS` | An existing group with the same name is taken over (see `ADOPT_GROUPS`). |
-
-4. Check the plan, especially `revoke`, and any **WARNING** lines above it. If the run fails with
+2. In the Google Cloud console, open **Cloud Run → Jobs → bw-scim-sync**, select the latest
+   execution, and select task `0` to open its logs.
+3. Expand the **Sync plan** entry, then **jsonPayload → plan**. It lists who would be invited
+   (`create_users`), restored (`reactivate`) and revoked (`revoke`), and which groups would be
+   created or updated, each with a **reason** such as `in Engineering` or
+   `no longer in any synced group`. [Read the sync plan](docs/ADMIN_GUIDE.md#read-the-sync-plan)
+   explains every field and reason.
+4. Check the plan, especially `revoke`, and any **WARNING** entries above it. If the run fails with
    `unauthorized_client`, the change from Step 3 isn't active yet: wait a few minutes and run it
    again.
 
@@ -318,160 +233,22 @@ When the plan looks right, run:
 gcloud run jobs update bw-scim-sync --region YOUR_REGION --update-env-vars DRY_RUN=false
 ```
 
-From now on, the schedule applies changes automatically. To sync immediately, run the `execute`
-command from Step 5 again, then check the logs for `Invited user`, `Created group` and similar
-entries.
+From now on, the schedule applies changes automatically. Run the `execute` command from Step 5 once
+more to sync now, then follow [Check that a sync worked](docs/ADMIN_GUIDE.md#check-that-a-sync-worked):
+the log shows entries such as `Invited user` and `Created group`, and the people appear on the
+**Members → Invited** tab in the Bitwarden Admin Console.
 
-## Existing members and groups
+## After setup
 
-The sync is careful with what's already in your organization:
+The [admin guide](docs/ADMIN_GUIDE.md) covers running the sync day to day:
 
-| What's already in Bitwarden | What the sync does |
-|---|---|
-| A member it invited earlier | Manages it fully: keeps group membership current, revokes and restores it. |
-| A member provisioned by Directory Connector from Google Workspace | Manages it fully if Directory Connector stored the Google user ID (a long number) as the member's external ID. Otherwise it's treated like a member provisioned by another tool (below): added to synced groups but never revoked. |
-| A member with the same email as a Google user, invited by hand | Adds it to the synced groups but **never revokes it**. To let the sync manage it fully, use `ADOPT_USERS`. |
-| A member provisioned by another tool (for example, Directory Connector from LDAP or Entra ID) | If its email matches a Google user in a synced group, adds it to the synced groups. Never revokes or adopts it, even with `ADOPT_USERS`. |
-| A member who isn't in any synced group, such as an owner | Leaves it alone. |
-| A group the sync created earlier | Keeps its name and membership in step with Google. |
-| A group with the same name as a synced Google group, which the sync didn't create | **Skips it** and logs a warning, so its current members aren't replaced. To let the sync take it over, use `ADOPT_GROUPS`. |
-
-## What users and admins see
-
-- **New members get an email invitation** from Bitwarden. Each person accepts it and creates or
-  signs in to their account, and then an admin confirms them in the Admin Console. Organizations that
-  use SSO with trusted devices or automatic confirmation may skip some of these steps.
-- **Groups appear in Bitwarden with the same names as in Google**, except where a same-named group
-  already existed (see above). To give a group access to collections, assign the collections to the
-  group in the Admin Console. The sync manages group membership only, not collection access.
-- **People who leave a synced group, or who are suspended or deleted in Google, are revoked**, not
-  deleted. They lose access, but an admin can restore them, and the sync restores them
-  automatically if they return to a synced group.
-- **Name and email changes in Google aren't sent to Bitwarden.**
-- **Removing a group from `GOOGLE_GROUPS` leaves its Bitwarden group in place.** Delete it in the
-  Admin Console if you no longer need it.
-
-## Settings
-
-Change a setting with:
-
-```
-gcloud run jobs update bw-scim-sync --region YOUR_REGION --update-env-vars NAME=value
-```
-
-For settings that hold a list, start the value with `^;^`. This tells `gcloud` to separate
-settings with `;` instead of commas, so the commas in your list are kept:
-
-```
-gcloud run jobs update bw-scim-sync --region YOUR_REGION \
-  --update-env-vars "^;^GOOGLE_GROUPS=engineering@acme.com,finance@acme.com"
-```
-
-You can also change settings in the Google Cloud console: **Cloud Run → Jobs → bw-scim-sync → Edit
-→ Variables & Secrets**. Changes apply from the next run.
-
-For the three list settings, `select-groups.sh` lets you pick from your directory instead of typing
-(see [Step 4](#step-4-choose-the-groups-to-sync)):
-
-| Setting | Command |
-|---|---|
-| `GOOGLE_GROUPS` | `bash select-groups.sh` |
-| `PROTECTED_EMAILS` | `bash select-groups.sh --protected-users` |
-| `ADOPT_USERS` | `bash select-groups.sh --adopt-users` |
-
-| Setting | Default | Meaning |
-|---|---|---|
-| `GOOGLE_GROUPS` | (none) | Comma-separated Google groups whose members get Bitwarden access. Required; set it with `select-groups.sh` or during setup. |
-| `DRY_RUN` | `true` | When `true`, the job only logs what it would do. |
-| `REMOVAL_ACTION` | `revoke` | What happens to members who leave: `revoke`, `delete` (remove from the organization), or `none`. |
-| `MAX_REMOVALS` | `10` | If a run would remove more members than this, it stops without changing anything. This protects against mistakes such as a mistyped group. Raise it for a planned bulk change. |
-| `PROTECTED_EMAILS` | (empty) | Comma-separated emails the sync never revokes, deletes or adopts. **Add your organization owners here if you turn on `ADOPT_USERS`**, because the sync can't see member roles. |
-| `ADOPT_USERS` | `false` | Lets the sync take over members who match a Google user by email and weren't provisioned by any tool (for example, invited by hand). `true` adopts all of them; a comma-separated list adopts only those emails. From then on, adopted members are revoked and restored like members the sync invited. |
-| `ADOPT_GROUPS` | (empty) | Comma-separated Google group emails whose same-named Bitwarden group the sync may take over. Its current members are replaced with the Google group's members. |
-| `GROUP_UPDATE_MODE` | `put` | How group updates are sent to Bitwarden: `put` or `patch`. Both replace the group's full member list. Leave the default unless Bitwarden support advises otherwise. |
-
-Set by setup, and normally never changed: `BW_SCIM_URL`, `GOOGLE_ADMIN_EMAIL`, `GOOGLE_SA_EMAIL`,
-and the `BW_SCIM_API_KEY` secret reference.
-
-## Everyday tasks
-
-**Sync now**
-```
-gcloud run jobs execute bw-scim-sync --region YOUR_REGION --wait
-```
-
-**Change which groups are synced.** Run `bash select-groups.sh`, change the ticks, save, and accept
-the dry run it offers. Read the dry run before the next scheduled run: members who are only in
-groups you removed get revoked. If the plan isn't what you want, run `select-groups.sh` again, or
-pause syncing (below) while you sort it out.
-
-**Choose protected users or users to adopt.** Run `bash select-groups.sh --protected-users` or
-`bash select-groups.sh --adopt-users`. Put your organization owners in the protected list if you
-use `ADOPT_USERS`.
-
-**Rotate the SCIM API key**
-1. In the Bitwarden Admin Console, go to **Settings → SCIM provisioning** and rotate the key. The
-   old key stops working immediately.
-2. In Cloud Shell, store the new key. What you type is hidden:
-   ```
-   read -rs -p "New SCIM API key: " KEY; echo
-   printf '%s' "$KEY" | gcloud secrets versions add bw-scim-api-key --data-file=-; unset KEY
-   ```
-   The next run uses the new key. Running `bash setup.sh` again also works.
-
-**Pause and resume syncing**
-```
-gcloud scheduler jobs pause bw-scim-sync-schedule --location YOUR_REGION
-gcloud scheduler jobs resume bw-scim-sync-schedule --location YOUR_REGION
-```
-
-**Change the schedule**
-```
-gcloud scheduler jobs update http bw-scim-sync-schedule --location YOUR_REGION --schedule "0 */4 * * *"
-```
-
-**Update to a new version.** Upload and unzip the new version in Cloud Shell, then run
-`bash setup.sh` from its folder. Your settings, including `DRY_RUN`, are kept.
-
-**Remove the sync completely**
-```
-gcloud scheduler jobs delete bw-scim-sync-schedule --location YOUR_REGION
-gcloud run jobs delete bw-scim-sync --region YOUR_REGION
-gcloud secrets delete bw-scim-api-key
-gcloud iam service-accounts delete bw-scim-sync@YOUR_PROJECT.iam.gserviceaccount.com
-```
-Then delete the Client ID entry from domain-wide delegation in the Google Admin console, and turn
-off SCIM in Bitwarden if you no longer use it. Container images remain in Artifact Registry under
-`cloud-run-source-deploy`; delete them there if you want. Members and groups already in Bitwarden
-stay as they are.
-
-## Self-hosted Bitwarden
-
-SCIM must be enabled on your server (`enable_scim: true` in `config.yml`, then rebuild). The SCIM
-URL must also be reachable from Google Cloud, either through your reverse proxy or a private
-connection such as a VPN. If you can't expose it, you can run the same container on your own
-infrastructure on a schedule, with the same environment variables. Ask Bitwarden support for help
-with that setup.
-
-## Troubleshooting
-
-Find the error in **Cloud Run → Jobs → bw-scim-sync → Logs**.
-
-| Message | Fix |
-|---|---|
-| `unauthorized_client` or `Client is unauthorized` | Step 3 is missing or not active yet. Check the Client ID and that all three scopes are listed, then wait a few minutes. |
-| `Google Directory API /groups/... failed: 404` | A group in `GOOGLE_GROUPS` doesn't exist. Check the spelling, and use the group's email address, not its name. |
-| `Google Directory API ... 403` | The admin email isn't a Google Workspace admin, or it's in a different Workspace from the groups. |
-| `Error calling the IAM signBlob API ... 403` | The service account can't sign its own tokens. Run `bash setup.sh` again. If you just ran it, wait a few minutes: new permissions take time to apply. |
-| `SCIM request failed: 401` | The SCIM API key is wrong or was rotated. See **Rotate the SCIM API key** under [Everyday tasks](#everyday-tasks). |
-| `GOOGLE_GROUPS must list at least one Google group email` | No groups are chosen yet. Run `bash select-groups.sh` (Step 4). |
-| `select-groups.sh`: `Couldn't find the bw-scim-sync job` | Check the region you entered. If you never ran `setup.sh` (or the manual setup), do Step 2 first. |
-| `select-groups.sh`: `Google rejected the directory access` | Step 3 is missing or not active yet. Wait a few minutes and run it again. |
-| `select-groups.sh`: `Waiting for permission to sign as the service account` | Normal the first time: the script just gave your account access, which takes a minute or two to apply. |
-| `Synced groups have no active members` | The groups are empty, or contain only suspended or outside users. Check `GOOGLE_GROUPS`. |
-| `Planned removals exceed MAX_REMOVALS` | Read the plan in the log. If the removals are intended, raise `MAX_REMOVALS` for one run, then set it back. |
-| `Bitwarden already has a group named ...` | A same-named group existed before the sync. See [Existing members and groups](#existing-members-and-groups). |
-| `skipped N member(s) that are suspended or not users of this Workspace` | Expected for suspended users and outside addresses. No action needed. |
-| `exists in Bitwarden but is revoked and was not provisioned by this sync` | A hand-invited member was revoked by an admin. Restore them in the Admin Console, or use `ADOPT_USERS`. |
-| Setup stops with `has no billing account linked` | Link a billing account to the project, then run the script again. |
-| The build or deploy fails with a Cloud Build permission error | Your organization restricts the default build account. Ask your Google Cloud admin to grant **Cloud Run Builder** (`roles/run.builder`) to `PROJECT_NUMBER-compute@developer.gserviceaccount.com`, then run the script again. See [MANUAL_SETUP.md](MANUAL_SETUP.md#5-build-and-deploy-the-job). |
+- [Check that a sync worked](docs/ADMIN_GUIDE.md#check-that-a-sync-worked): the run, its log, and
+  what to look for in Bitwarden.
+- [Which people are synced](docs/ADMIN_GUIDE.md#which-people-are-synced), including
+  [nested groups](docs/ADMIN_GUIDE.md#nested-groups).
+- [Existing members and groups](docs/ADMIN_GUIDE.md#existing-members-and-groups) and
+  [what users and admins see](docs/ADMIN_GUIDE.md#what-users-and-admins-see).
+- [Everyday tasks](docs/ADMIN_GUIDE.md#everyday-tasks): change groups, rotate the key, pause, update,
+  uninstall.
+- [Settings](docs/ADMIN_GUIDE.md#settings), [self-hosted Bitwarden](docs/ADMIN_GUIDE.md#self-hosted-bitwarden)
+  and [troubleshooting](docs/ADMIN_GUIDE.md#troubleshooting).

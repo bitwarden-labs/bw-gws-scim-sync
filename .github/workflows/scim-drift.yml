@@ -1,7 +1,7 @@
 name: Bitwarden SCIM drift check
 
 # The sync relies on Bitwarden SCIM behaviors verified against bitwarden/server at one commit
-# (see TESTING.md, section 5). This opens an issue when the SCIM code changes after that commit,
+# (see docs/TESTING.md, section 5). This opens an issue when the SCIM code changes after that commit,
 # so someone re-checks those assumptions. To accept the changes, update BASELINE_* below.
 
 on:
@@ -50,7 +50,7 @@ jobs:
           title="Bitwarden SCIM code changed since validated baseline"
           {
             echo "bitwarden/server changed SCIM code after \`${BASELINE_SHA:0:8}\` ($BASELINE_DATE)."
-            echo "Re-check the assumptions in TESTING.md section 5, then update \`BASELINE_SHA\`/\`BASELINE_DATE\`"
+            echo "Re-check the assumptions in docs/TESTING.md section 5, then update \`BASELINE_SHA\`/\`BASELINE_DATE\`"
             echo "in \`.github/workflows/scim-drift.yml\` and close this issue."
             echo
             cat commits.md

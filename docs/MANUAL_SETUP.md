@@ -1,10 +1,12 @@
 # Manual Google Cloud setup
 
-This guide does by hand everything that `setup.sh` does (README Step 2), for organizations that
-prefer to make and review each Google Cloud change themselves. Each step shows the Google Cloud
+This guide does by hand everything that `setup.sh` does
+([README Step 2](../README.md#step-2-set-up-google-cloud)), for organizations that prefer to make
+and review each Google Cloud change themselves. Each step shows the Google Cloud
 console path and the equivalent `gcloud` command. Use whichever you prefer.
 
-When you finish, continue with **README Step 3** (domain-wide delegation).
+When you finish, continue with
+[README Step 3](../README.md#step-3-allow-the-sync-to-read-your-directory) (domain-wide delegation).
 
 > Maintainers: this file must match `setup.sh`. When the script changes, update the matching section
 > here. The table at the end maps each script step to its section.
@@ -44,9 +46,9 @@ flowchart TB
 | `REGION` | `us-central1` | Use the same region in every step. |
 | `SA_EMAIL` | `bw-scim-sync@PROJECT_ID.iam.gserviceaccount.com` | Created in step 3. |
 
-The names `bw-scim-sync`, `bw-scim-api-key` and `bw-scim-sync-schedule` are the ones the README
-commands and `select-groups.sh` use. Keep them, or the README commands need adjusting and
-`select-groups.sh` won't find the job.
+The names `bw-scim-sync`, `bw-scim-api-key` and `bw-scim-sync-schedule` are the ones
+`select-groups.sh` and the commands in the README and the [admin guide](ADMIN_GUIDE.md) use. Keep
+them, or those commands need adjusting and `select-groups.sh` won't find the job.
 
 To use the `gcloud` commands, open [Cloud Shell](https://shell.cloud.google.com) and set the
 variables once:
@@ -112,8 +114,9 @@ A new service account can take a minute or two to become usable. If the second c
 
 - **Console:**
   1. **Security → Secret Manager → Create secret**.
-  2. **Name:** `bw-scim-api-key`. **Secret value:** the SCIM API key from README Step 1. Leave the
-     other options at their defaults and select **Create secret**.
+  2. **Name:** `bw-scim-api-key`. **Secret value:** the SCIM API key from
+     [README Step 1](../README.md#step-1-enable-scim-in-bitwarden). Leave the other options at their
+     defaults and select **Create secret**.
   3. On the secret's page, open the **Permissions** tab and select **Grant access**.
   4. **New principals:** `SA_EMAIL`. **Role:** **Secret Manager Secret Accessor**. Select **Save**.
 - **gcloud** (what you type is hidden):
@@ -127,8 +130,9 @@ A new service account can take a minute or two to become usable. If the second c
 
 ## 5. Build and deploy the job
 
-The job is built from the `bw-gws-scim-sync` folder. Upload and unzip it in Cloud Shell as in README
-Step 2, and run the commands below from inside the folder.
+The job is built from the `bw-gws-scim-sync` folder. Upload and unzip it in Cloud Shell as in
+[README Step 2](../README.md#step-2-set-up-google-cloud), and run the commands below from inside
+the folder.
 
 **Before you build:** builds run as the Compute Engine default service account,
 `PROJECT_NUMBER-compute@developer.gserviceaccount.com`. Many organizations remove its default
@@ -154,13 +158,13 @@ The job needs these settings, whichever option you use:
 | Environment variable `BW_SCIM_URL` | The SCIM URL from README Step 1 |
 | Environment variable `GOOGLE_ADMIN_EMAIL` | The Google Workspace admin the sync reads the directory as |
 | Environment variable `GOOGLE_SA_EMAIL` | `SA_EMAIL` |
-| Environment variable `GOOGLE_GROUPS` | Comma-separated Google group emails. **Optional here:** leave it out and pick the groups from your directory with `select-groups.sh` (README Step 4). |
+| Environment variable `GOOGLE_GROUPS` | Comma-separated Google group emails. **Optional here:** leave it out and pick the groups from your directory with `select-groups.sh` ([README Step 4](../README.md#step-4-choose-the-groups-to-sync)). |
 | Environment variable `DRY_RUN` | `true` |
 | Secret exposed as environment variable `BW_SCIM_API_KEY` | Secret `bw-scim-api-key`, version `latest` |
 | Maximum retries | `0` |
 | Task timeout | `30m` |
 
-The other settings in the README's **Settings** table are optional. Add them the same way if you
+The other settings in the admin guide's [Settings](ADMIN_GUIDE.md#settings) table are optional. Add them the same way if you
 need them.
 
 ### Option A: one command (the same as `setup.sh`)
@@ -231,7 +235,8 @@ job.
 
 ## 7. Get the Client ID
 
-README Step 3 needs the service account's OAuth client ID.
+[README Step 3](../README.md#step-3-allow-the-sync-to-read-your-directory) needs the service
+account's OAuth client ID.
 
 - **Console:** **IAM & Admin → Service accounts → bw-scim-sync**. The **Unique ID** is the Client ID.
 - **gcloud:**
@@ -239,8 +244,8 @@ README Step 3 needs the service account's OAuth client ID.
   gcloud iam service-accounts describe $SA_EMAIL --format 'value(oauth2ClientId)'
   ```
 
-Now continue with **README Step 3**, then Steps 4 to 6. `select-groups.sh` (Step 4) works the same
-after a manual setup.
+Now continue with [README Step 3](../README.md#step-3-allow-the-sync-to-read-your-directory), then
+Steps 4 to 6. `select-groups.sh` (Step 4) works the same after a manual setup.
 
 ## What was created
 
@@ -257,7 +262,8 @@ after a manual setup.
 | IAM: Cloud Run Invoker | `SA_EMAIL` on the job | Step 6 |
 | Cloud Scheduler job | `bw-scim-sync-schedule` | Step 6 |
 
-To remove everything, follow **Remove the sync completely** in the README. With option B, also
+To remove everything, follow **Remove the sync completely** under
+[Everyday tasks](ADMIN_GUIDE.md#everyday-tasks). With option B, also
 delete the `bw-scim-sync` Artifact Registry repository.
 
 ## Mapping to `setup.sh`
