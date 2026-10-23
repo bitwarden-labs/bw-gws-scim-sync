@@ -129,8 +129,9 @@ each change by hand, follow [docs/MANUAL_SETUP.md](docs/MANUAL_SETUP.md) instead
 > If `gh` isn't installed, use the zip (see **Other ways to get the tool** below).
 
 You can also run the command in your own terminal instead of Cloud Shell, if it has the
-[Google Cloud CLI](https://cloud.google.com/sdk/docs/install) (signed in with `gcloud auth login`)
-and Python 3.
+[Google Cloud CLI](https://cloud.google.com/sdk/docs/install) and Python 3. Sign in with both
+`gcloud auth login` and `gcloud auth application-default login` (`select-groups.sh` uses the second).
+These sign-ins expire from time to time; the scripts tell you which one to renew.
 
 <details>
 <summary>Other ways to get the tool</summary>

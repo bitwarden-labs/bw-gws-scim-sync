@@ -34,6 +34,17 @@ print(",".join([e for e in a if e not in b] if op == "minus" else a + [e for e i
 
 ACCOUNT=$(gcloud config get-value account 2>/dev/null || true)
 [[ -n "$ACCOUNT" ]] || { echo "No gcloud account is signed in. Run: gcloud auth login"; exit 1; }
+# An expired sign-in otherwise shows up later as "can't access project". </dev/null stops gcloud
+# from waiting at a hidden password prompt.
+if ! gcloud auth print-access-token </dev/null >/dev/null 2>&1; then
+  echo "The gcloud sign-in for $ACCOUNT has expired. Run: gcloud auth login" >&2
+  exit 1
+fi
+# The directory reads use Application Default Credentials (automatic in Cloud Shell).
+if ! gcloud auth application-default print-access-token </dev/null >/dev/null 2>&1; then
+  echo "Application Default Credentials are missing or expired. Run: gcloud auth application-default login" >&2
+  exit 1
+fi
 ask PROJECT_ID "Google Cloud project ID" "$(gcloud config get-value project 2>/dev/null || true)"
 gcloud config set project "$PROJECT_ID" --quiet >/dev/null 2>&1
 if [[ -z "${REGION:-}" ]]; then

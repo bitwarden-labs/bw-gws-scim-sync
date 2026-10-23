@@ -19,6 +19,12 @@ ask() {  # ask VAR "Prompt" [default]
 
 ACCOUNT=$(gcloud config get-value account 2>/dev/null || true)
 [[ -n "$ACCOUNT" ]] || { echo "No gcloud account is signed in. Run: gcloud auth login"; exit 1; }
+# An expired sign-in otherwise shows up later as "can't access project". </dev/null stops gcloud
+# from waiting at a hidden password prompt.
+if ! gcloud auth print-access-token </dev/null >/dev/null 2>&1; then
+  echo "The gcloud sign-in for $ACCOUNT has expired. Run: gcloud auth login" >&2
+  exit 1
+fi
 echo "Signed in to gcloud as: $ACCOUNT"
 if [[ -z "${PROJECT_ID:-}" ]]; then
   ask PROJECT_ID "Google Cloud project ID" "$(gcloud config get-value project 2>/dev/null || true)"
