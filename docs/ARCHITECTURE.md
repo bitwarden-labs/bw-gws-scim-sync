@@ -153,10 +153,43 @@ sequenceDiagram
     end
 ```
 
+## Windows (PowerShell)
+
+`install.ps1`, `setup.ps1` and `select-groups.ps1` do what the bash scripts do, with only PowerShell
+and `gcloud`. Every `gcloud` option goes into a temporary `--flags-file` (JSON), so nothing on the
+command line is special to Windows (`^`, `;`, `,`, spaces). `select-groups.ps1` doesn't use Python:
+
+```mermaid
+sequenceDiagram
+    actor A as You in PowerShell
+    participant S as select-groups.ps1
+    participant I as IAM Credentials API
+    participant O as Google sign-in
+    participant D as Directory API
+    participant R as Cloud Run job
+    participant L as Cloud Logging
+    A->>S: Run it
+    S->>I: signJwt as bw-scim-sync (your gcloud sign-in)
+    I-->>S: Signed delegation request
+    S->>O: Exchange it for read-only directory access
+    O-->>S: Access token
+    S->>D: List groups or users, every page
+    S->>A: Numbered list, current ones ticked
+    A->>S: Toggle, s, save
+    S->>R: Save GOOGLE_GROUPS and DELETE_GROUPS
+    opt Dry run
+        S->>R: execute --update-env-vars DRY_RUN=true (this run only) --wait
+        S->>L: Read that execution's log
+        S->>A: Planned changes
+    end
+```
+
 ## Code (maintainers)
 
 ```mermaid
 flowchart TB
+    PS1["setup.ps1 · select-groups.ps1 · install.ps1"] --> PSC["powershell/common.ps1<br/>gcloud with a flags file, prompts"]
+    PS1 --> PSP["powershell/picker.ps1<br/>directory via REST, picker, Cloud Run dry run"]
     SEL["select-groups.sh"] --> PICK["src/picker.py<br/>directory picker"]
     SEL -- "dry run" --> MAIN
     PICK --> GD

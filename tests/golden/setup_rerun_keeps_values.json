@@ -1,0 +1,232 @@
+{
+ "calls": [
+  {
+   "words": [
+    "config",
+    "get-value",
+    "account"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "auth",
+    "print-access-token"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "config",
+    "get-value",
+    "project"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "projects",
+    "describe",
+    "test-proj"
+   ],
+   "options": {
+    "--format": "value(projectId)"
+   }
+  },
+  {
+   "words": [
+    "config",
+    "set",
+    "project",
+    "test-proj"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "run",
+    "jobs",
+    "list"
+   ],
+   "options": {
+    "--filter": "metadata.name=bw-scim-sync",
+    "--format": "value(region)",
+    "--limit": "1"
+   }
+  },
+  {
+   "words": [
+    "run",
+    "jobs",
+    "describe",
+    "bw-scim-sync"
+   ],
+   "options": {
+    "--format": "json",
+    "--region": "europe-west1"
+   }
+  },
+  {
+   "words": [
+    "scheduler",
+    "jobs",
+    "describe",
+    "bw-scim-sync-schedule"
+   ],
+   "options": {
+    "--format": "value(schedule,timeZone)",
+    "--location": "europe-west1"
+   }
+  },
+  {
+   "words": [
+    "secrets",
+    "describe",
+    "bw-scim-api-key"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "billing",
+    "projects",
+    "describe",
+    "test-proj"
+   ],
+   "options": {
+    "--format": "value(billingEnabled)"
+   }
+  },
+  {
+   "words": [
+    "services",
+    "enable",
+    "run.googleapis.com",
+    "cloudbuild.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "cloudscheduler.googleapis.com",
+    "secretmanager.googleapis.com",
+    "iamcredentials.googleapis.com",
+    "admin.googleapis.com"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "iam",
+    "service-accounts",
+    "describe",
+    "bw-scim-sync@test-proj.iam.gserviceaccount.com"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "iam",
+    "service-accounts",
+    "add-iam-policy-binding",
+    "bw-scim-sync@test-proj.iam.gserviceaccount.com"
+   ],
+   "options": {
+    "--member": "serviceAccount:bw-scim-sync@test-proj.iam.gserviceaccount.com",
+    "--role": "roles/iam.serviceAccountTokenCreator"
+   }
+  },
+  {
+   "words": [
+    "secrets",
+    "describe",
+    "bw-scim-api-key"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "secrets",
+    "add-iam-policy-binding",
+    "bw-scim-api-key"
+   ],
+   "options": {
+    "--member": "serviceAccount:bw-scim-sync@test-proj.iam.gserviceaccount.com",
+    "--role": "roles/secretmanager.secretAccessor"
+   }
+  },
+  {
+   "words": [
+    "run",
+    "jobs",
+    "deploy",
+    "bw-scim-sync"
+   ],
+   "options": {
+    "--max-retries": "0",
+    "--region": "europe-west1",
+    "--service-account": "bw-scim-sync@test-proj.iam.gserviceaccount.com",
+    "--set-secrets": {
+     "BW_SCIM_API_KEY": "bw-scim-api-key:latest"
+    },
+    "--source": ".",
+    "--task-timeout": "30m",
+    "--update-env-vars": {
+     "BW_SCIM_URL": "https://scim.bitwarden.eu/v2/org-1",
+     "GOOGLE_ADMIN_EMAIL": "admin@acme.com",
+     "GOOGLE_SA_EMAIL": "bw-scim-sync@test-proj.iam.gserviceaccount.com",
+     "GOOGLE_GROUPS": "eng@acme.com,fin@acme.com"
+    }
+   }
+  },
+  {
+   "words": [
+    "run",
+    "jobs",
+    "add-iam-policy-binding",
+    "bw-scim-sync"
+   ],
+   "options": {
+    "--member": "serviceAccount:bw-scim-sync@test-proj.iam.gserviceaccount.com",
+    "--region": "europe-west1",
+    "--role": "roles/run.invoker"
+   }
+  },
+  {
+   "words": [
+    "scheduler",
+    "jobs",
+    "describe",
+    "bw-scim-sync-schedule"
+   ],
+   "options": {
+    "--location": "europe-west1"
+   }
+  },
+  {
+   "words": [
+    "scheduler",
+    "jobs",
+    "update",
+    "http",
+    "bw-scim-sync-schedule"
+   ],
+   "options": {
+    "--http-method": "POST",
+    "--location": "europe-west1",
+    "--oauth-service-account-email": "bw-scim-sync@test-proj.iam.gserviceaccount.com",
+    "--schedule": "0 */4 * * *",
+    "--time-zone": "Europe/Madrid",
+    "--uri": "https://run.googleapis.com/v2/projects/test-proj/locations/europe-west1/jobs/bw-scim-sync:run"
+   }
+  },
+  {
+   "words": [
+    "iam",
+    "service-accounts",
+    "describe",
+    "bw-scim-sync@test-proj.iam.gserviceaccount.com"
+   ],
+   "options": {
+    "--format": "value(oauth2ClientId)"
+   }
+  }
+ ],
+ "python": []
+}

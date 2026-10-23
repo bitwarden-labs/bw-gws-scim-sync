@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # One-line installer: downloads a pinned release of the sync and runs setup.sh.
-#   bash <(curl -fsSL https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.0.0/install.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.1.0/install.sh)
 # Works in Google Cloud Shell or any terminal with gcloud, python3, curl and tar.
 # Options (environment variables): BW_SYNC_REF (tag, branch or commit; default below),
 # BW_SYNC_DIR (default ~/bw-gws-scim-sync), BW_SYNC_SKIP_SETUP=1 (download only).
 # Everything is inside main(), which runs only once the whole file has downloaded.
 set -euo pipefail
 
-VERSION=v1.0.0
+VERSION=v1.1.0
 REPO=bitwarden-labs/bw-gws-scim-sync
 TMP=""
 trap '[[ -n "$TMP" ]] && rm -rf "$TMP"' EXIT

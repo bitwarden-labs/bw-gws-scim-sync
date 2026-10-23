@@ -8,8 +8,8 @@ console path and the equivalent `gcloud` command. Use whichever you prefer.
 When you finish, continue with
 [README Step 3](../README.md#step-3-allow-the-sync-to-read-your-directory) (domain-wide delegation).
 
-> Maintainers: this file must match `setup.sh`. When the script changes, update the matching section
-> here. The table at the end maps each script step to its section.
+> Maintainers: this file must match `setup.sh` and `setup.ps1`. When the scripts change, update the
+> matching section here. The table at the end maps each script step to its section.
 
 ## What you'll create
 
@@ -59,6 +59,18 @@ REGION=us-central1
 SA_EMAIL=bw-scim-sync@$PROJECT_ID.iam.gserviceaccount.com
 gcloud config set project $PROJECT_ID
 ```
+
+On Windows, in PowerShell with the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install#windows):
+
+```powershell
+$PROJECT_ID = 'acme-bitwarden-sync'
+$REGION = 'us-central1'
+$SA_EMAIL = "bw-scim-sync@$PROJECT_ID.iam.gserviceaccount.com"
+gcloud config set project $PROJECT_ID
+```
+
+The `gcloud` commands below then work in PowerShell too. Type each one on a single line (a `\` at
+the end of a line continues a command only in bash), and use the Windows version of step 5 option A.
 
 ## 1. Check billing
 
@@ -134,8 +146,15 @@ The job is built from the `bw-gws-scim-sync` folder. To download it without runn
 run the installer with `BW_SYNC_SKIP_SETUP=1`:
 
 ```bash
-BW_SYNC_SKIP_SETUP=1 bash <(curl -fsSL https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.0.0/install.sh)
+BW_SYNC_SKIP_SETUP=1 bash <(curl -fsSL https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.1.0/install.sh)
 cd ~/bw-gws-scim-sync
+```
+
+On Windows (PowerShell):
+
+```powershell
+$env:BW_SYNC_SKIP_SETUP = '1'; irm https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.1.0/install.ps1 | iex
+cd $HOME\bw-gws-scim-sync
 ```
 
 Or upload and unzip it as in [README Step 2](../README.md#step-2-set-up-google-cloud) (**Other ways
@@ -186,6 +205,20 @@ gcloud run jobs deploy bw-scim-sync --source . --region $REGION \
   --set-secrets "BW_SCIM_API_KEY=bw-scim-api-key:latest" \
   --update-env-vars "^;^BW_SCIM_URL=https://scim.bitwarden.com/v2/ORG_ID;GOOGLE_ADMIN_EMAIL=admin@acme.com;GOOGLE_SA_EMAIL=$SA_EMAIL;GOOGLE_GROUPS=engineering@acme.com,finance@acme.com;DRY_RUN=true" \
   --max-retries 0 --task-timeout 30m
+```
+
+On Windows, `^` and `;` are special on the command line, so put the settings in a file and pass it
+with `--flags-file` (this is what `setup.ps1` does):
+
+```powershell
+@{
+    '--set-secrets'     = @{ BW_SCIM_API_KEY = 'bw-scim-api-key:latest' }
+    '--update-env-vars' = [ordered]@{
+        BW_SCIM_URL = 'https://scim.bitwarden.com/v2/ORG_ID'; GOOGLE_ADMIN_EMAIL = 'admin@acme.com'
+        GOOGLE_SA_EMAIL = $SA_EMAIL; GOOGLE_GROUPS = 'engineering@acme.com,finance@acme.com'; DRY_RUN = 'true'
+    }
+} | ConvertTo-Json | Set-Content deploy-flags.json
+gcloud run jobs deploy bw-scim-sync --source . --region $REGION --service-account $SA_EMAIL --max-retries 0 --task-timeout 30m --flags-file deploy-flags.json
 ```
 
 The first time, `gcloud` asks to create an Artifact Registry repository named
@@ -273,11 +306,14 @@ To remove everything, follow **Remove the sync completely** under
 [Everyday tasks](ADMIN_GUIDE.md#everyday-tasks). With option B, also
 delete the `bw-scim-sync` Artifact Registry repository.
 
-## Mapping to `setup.sh`
+## Mapping to `setup.sh` and `setup.ps1`
+
+Both scripts run the same steps in the same order; the tests check that they make the same `gcloud`
+calls (docs/TESTING.md).
 
 | `setup.sh` step | Section here |
 |---|---|
-| `install.sh` downloads the folder, then starts `setup.sh` | Step 5, downloading the folder |
+| `install.sh` (`install.ps1` on Windows) downloads the folder, then starts `setup.sh` (`setup.ps1`) | Step 5, downloading the folder |
 | Checks the gcloud account and project, asks for the values (on a rerun, the region defaults to the deployed job's) | Values used below |
 | On a rerun, reads the deployed job's environment variables, the schedule and whether the secret exists, and offers them as defaults | Console: the job's **Configuration** tab and the scheduler job. gcloud: `gcloud run jobs describe bw-scim-sync --region $REGION` and `gcloud scheduler jobs describe bw-scim-sync-schedule --location $REGION` |
 | Billing check | 1 |

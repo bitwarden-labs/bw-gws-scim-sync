@@ -1,0 +1,28 @@
+{
+ "calls": [
+  {
+   "words": [
+    "config",
+    "get-value",
+    "account"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "auth",
+    "print-access-token"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "auth",
+    "application-default",
+    "print-access-token"
+   ],
+   "options": {}
+  }
+ ],
+ "python": []
+}

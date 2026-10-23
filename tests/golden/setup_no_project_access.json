@@ -1,0 +1,30 @@
+{
+ "calls": [
+  {
+   "words": [
+    "config",
+    "get-value",
+    "account"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "auth",
+    "print-access-token"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "projects",
+    "describe",
+    "test-proj"
+   ],
+   "options": {
+    "--format": "value(projectId)"
+   }
+  }
+ ],
+ "python": []
+}

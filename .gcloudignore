@@ -7,3 +7,6 @@ install.sh
 select-groups.sh
 .env*
 .venv/
+*.ps1
+powershell/
+PSScriptAnalyzerSettings.psd1

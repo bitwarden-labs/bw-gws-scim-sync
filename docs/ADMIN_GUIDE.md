@@ -13,6 +13,17 @@ follow [README.md](../README.md) first.
 In the commands below, replace `YOUR_REGION` with the region you chose during setup, for example
 `us-central1`, and `YOUR_PROJECT` with your Google Cloud project ID.
 
+**On Windows (PowerShell):** the commands are shown for Cloud Shell. If you set up from PowerShell
+([README Step 2](../README.md#on-windows-without-cloud-shell)), run the scripts like this instead;
+options such as `--protected-users` work the same, and so do the messages:
+
+| Cloud Shell | Windows PowerShell |
+|---|---|
+| `bash setup.sh` | `powershell -ExecutionPolicy Bypass -File $HOME\bw-gws-scim-sync\setup.ps1` |
+| `bash select-groups.sh` | `powershell -ExecutionPolicy Bypass -File $HOME\bw-gws-scim-sync\select-groups.ps1` |
+
+`gcloud` commands work the same in PowerShell. The few that don't have a Windows version below.
+
 ## Check that a sync worked
 
 Use these steps after setup, after changing a setting, or whenever you want to confirm that a change
@@ -75,6 +86,8 @@ To read the same entries in Cloud Shell:
 gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="bw-scim-sync"' \
   --freshness 1h --limit 100 --format 'value(jsonPayload)'
 ```
+
+On Windows, use the console as above: the quotes in this filter don't survive Windows' command line.
 
 ### 4. Check Bitwarden
 
@@ -247,6 +260,10 @@ use `ADOPT_USERS`.
    ```
    The next run uses the new key. Running `bash setup.sh` again also works.
 
+   On Windows, run `setup.ps1` again (see the table at the top), press **Enter** at every prompt
+   except the key, and type the new key there. It's stored as a new secret version; nothing else
+   changes.
+
 **Pause and resume syncing**
 ```
 gcloud scheduler jobs pause bw-scim-sync-schedule --location YOUR_REGION
@@ -274,6 +291,11 @@ Press **Enter** at each prompt to keep your values. Your settings, including `DR
 If you installed from the zip instead, upload and unzip the new version, then run `bash setup.sh`
 from its folder.
 
+On Windows (PowerShell), run the Windows installer with the new version number:
+```powershell
+irm https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.1.0/install.ps1 | iex
+```
+
 **Remove the sync completely**
 ```
 gcloud scheduler jobs delete bw-scim-sync-schedule --location YOUR_REGION
@@ -300,6 +322,14 @@ settings with `;` instead of commas, so the commas in your list are kept:
 ```
 gcloud run jobs update bw-scim-sync --region YOUR_REGION \
   --update-env-vars "^;^GOOGLE_GROUPS=engineering@acme.com,finance@acme.com"
+```
+
+On Windows, `^` is a special character on the command line and can get lost. Put the setting in a
+small file instead and pass it with `--flags-file`:
+
+```powershell
+'{"--update-env-vars": {"GOOGLE_GROUPS": "engineering@acme.com,finance@acme.com"}}' | Set-Content flags.json
+gcloud run jobs update bw-scim-sync --region YOUR_REGION --flags-file flags.json
 ```
 
 You can also change settings in the Google Cloud console: **Cloud Run → Jobs → bw-scim-sync → Edit
@@ -366,6 +396,10 @@ Find the error in the run's log (see [Read the log](#3-read-the-log)).
 | `exists in Bitwarden but is revoked and was not provisioned by this sync` | A hand-invited member was revoked by an admin. Restore them in the Admin Console, or use `ADOPT_USERS`. |
 | A person you expected isn't in the plan | Check that they're an active user of your Workspace, and that they're in a synced group or a group nested inside one. The picker's member counts only include direct members. |
 | `setup.sh` or `select-groups.sh`: `The gcloud sign-in for ... has expired` | Google asks you to sign in again from time to time. Run `gcloud auth login`, then run the script again. |
-| `select-groups.sh`: `Application Default Credentials are missing or expired` | Only outside Cloud Shell. Run `gcloud auth application-default login`, then run the script again. |
+| `select-groups.sh`: `Application Default Credentials are missing or expired` | Only outside Cloud Shell. Run `gcloud auth application-default login`, then run the script again. (`select-groups.ps1` doesn't need this sign-in.) |
+| Windows: `... cannot be loaded because running scripts is disabled on this system` | Start the script with `powershell -ExecutionPolicy Bypass -File ...` (see the table at the top). That allows it for this run only. |
+| Windows installer: `The Google Cloud CLI (gcloud) is missing` | Install the [Google Cloud CLI for Windows](https://cloud.google.com/sdk/docs/install#windows), open a new PowerShell window, and run the installer again. |
+| Windows installer: `Version ... has no PowerShell scripts` | The version in the command is older than v1.1.0. Use v1.1.0 or later. |
+| `select-groups.ps1`: `The dry run stopped with an error` | The Cloud Run run behind the dry run failed. The lines above it show why; the full log is in **Cloud Run → Jobs → bw-scim-sync → Logs**. |
 | Setup stops with `has no billing account linked` | Link a billing account to the project, then run the script again. |
 | The build or deploy fails with a Cloud Build permission error | Your organization restricts the default build account. Ask your Google Cloud admin to grant **Cloud Run Builder** (`roles/run.builder`) to `PROJECT_NUMBER-compute@developer.gserviceaccount.com`, then run the script again. See [MANUAL_SETUP.md](MANUAL_SETUP.md#5-build-and-deploy-the-job). |

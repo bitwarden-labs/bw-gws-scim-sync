@@ -1,0 +1,56 @@
+{
+ "calls": [
+  {
+   "words": [
+    "config",
+    "get-value",
+    "account"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "auth",
+    "print-access-token"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "auth",
+    "application-default",
+    "print-access-token"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "config",
+    "get-value",
+    "project"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "config",
+    "set",
+    "project",
+    "test-proj"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "run",
+    "jobs",
+    "list"
+   ],
+   "options": {
+    "--filter": "metadata.name=bw-scim-sync",
+    "--format": "value(region)"
+   }
+  }
+ ],
+ "python": []
+}

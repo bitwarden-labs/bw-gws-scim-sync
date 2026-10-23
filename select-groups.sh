@@ -105,14 +105,19 @@ if ! gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" --member "$M
   exit 1
 fi
 
-if [[ ! -x .venv/bin/python ]]; then
-  echo "Installing the tool's Python dependencies (first run only)..."
-  python3 -m venv .venv
+if [[ -n "${BW_SYNC_PYTHON:-}" ]]; then
+  PY=$BW_SYNC_PYTHON  # a Python you manage yourself (also used by the tests)
+else
+  if [[ ! -x .venv/bin/python ]]; then
+    echo "Installing the tool's Python dependencies (first run only)..."
+    python3 -m venv .venv
+  fi
+  .venv/bin/pip install -q --disable-pip-version-check -r requirements.txt
+  PY=.venv/bin/python
 fi
-.venv/bin/pip install -q --disable-pip-version-check -r requirements.txt
 
 status=0
-.venv/bin/python -m src.picker "$KIND" --current "$CURRENT" --title "$TITLE" --output "$WORK/chosen" || status=$?
+"$PY" -m src.picker "$KIND" --current "$CURRENT" --title "$TITLE" --output "$WORK/chosen" || status=$?
 case $status in
   0) ;;
   3|4) exit 0 ;;  # Nothing changed, or cancelled: the picker already said so.
@@ -173,7 +178,7 @@ if [[ -z "${GOOGLE_GROUPS:-}" && -z "${DELETE_GROUPS:-}" ]]; then
 fi
 BW_SCIM_API_KEY=$(gcloud secrets versions access latest --secret "$SECRET")
 export BW_SCIM_API_KEY DRY_RUN=true
-.venv/bin/python -m src.main | .venv/bin/python -c "$(cat <<'PY'
+"$PY" -m src.main | "$PY" -c "$(cat <<'PY'
 import json, sys
 for line in sys.stdin:
     entry = json.loads(line)

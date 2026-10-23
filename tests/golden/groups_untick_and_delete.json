@@ -1,0 +1,124 @@
+{
+ "calls": [
+  {
+   "words": [
+    "config",
+    "get-value",
+    "account"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "auth",
+    "print-access-token"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "auth",
+    "application-default",
+    "print-access-token"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "config",
+    "get-value",
+    "project"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "config",
+    "set",
+    "project",
+    "test-proj"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "run",
+    "jobs",
+    "list"
+   ],
+   "options": {
+    "--filter": "metadata.name=bw-scim-sync",
+    "--format": "value(region)"
+   }
+  },
+  {
+   "words": [
+    "run",
+    "jobs",
+    "describe",
+    "bw-scim-sync"
+   ],
+   "options": {
+    "--format": "json",
+    "--region": "europe-west1"
+   }
+  },
+  {
+   "words": [
+    "iam",
+    "service-accounts",
+    "add-iam-policy-binding",
+    "bw-scim-sync@test-proj.iam.gserviceaccount.com"
+   ],
+   "options": {
+    "--member": "user:admin@acme.com",
+    "--role": "roles/iam.serviceAccountTokenCreator"
+   }
+  },
+  {
+   "words": [
+    "run",
+    "jobs",
+    "update",
+    "bw-scim-sync"
+   ],
+   "options": {
+    "--region": "europe-west1",
+    "--update-env-vars": {
+     "GOOGLE_GROUPS": "eng@acme.com",
+     "DELETE_GROUPS": "fin@acme.com"
+    }
+   }
+  },
+  {
+   "words": [
+    "secrets",
+    "versions",
+    "access",
+    "latest"
+   ],
+   "options": {
+    "--secret": "bw-scim-api-key"
+   }
+  }
+ ],
+ "python": [
+  {
+   "picker": {
+    "kind": "groups",
+    "current": "eng@acme.com,fin@acme.com",
+    "title": "Google groups to sync"
+   }
+  },
+  {
+   "main": {
+    "GOOGLE_GROUPS": "eng@acme.com",
+    "DELETE_GROUPS": "fin@acme.com",
+    "PROTECTED_EMAILS": "",
+    "BW_SCIM_API_KEY": "fake-scim-key",
+    "BW_SCIM_URL": "https://scim.bitwarden.eu/v2/org-1",
+    "DRY_RUN": "true"
+   }
+  }
+ ]
+}

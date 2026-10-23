@@ -28,12 +28,36 @@ python -m unittest discover -s tests -t . -v
   SCIM server. It covers pagination, invites, revoke, group create, group PUT and PATCH, linking
   adopted groups and users, deleting a linked group, and an idempotent second run.
 
+- `tests/test_scripts.py` runs `setup.sh`, `setup.ps1`, `select-groups.sh` and `select-groups.ps1`
+  against a fake `gcloud` (`tests/fakes/`) in every shell installed: bash, PowerShell 7, and on Windows
+  also Windows PowerShell 5.1. Each scenario's `gcloud` calls are compared with
+  `tests/golden/<scenario>.json`, recorded from the bash scripts, so the PowerShell versions must make
+  the same calls with the same values: deploy settings, the exact SCIM key (no added line break),
+  saved settings, `DELETE_GROUPS`. On Windows the fake `gcloud` is a `.cmd` file, like the real one,
+  so it sees exactly what Windows passes. `select-groups.ps1` reads the directory and runs the dry run
+  without Python, so the test also checks its Google API calls (delegation claims, every directory
+  page) and that its Cloud Run dry run uses a one-off `DRY_RUN=true`. After an intended change to the
+  bash scripts, re-record with `UPDATE_GOLDEN=1 python -m unittest tests.test_scripts`.
+- `tests/powershell/common.Tests.ps1` (Pester 5) covers the PowerShell helpers: lists, prompts,
+  reading the job's settings, the flags file `gcloud` gets (commas kept, one-item lists stay lists,
+  unsafe arguments refused), the picker (ranges, filter, toggling, cancel), directory paging and the
+  dry-run output. Run it with:
+  ```powershell
+  Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -SkipPublisherCheck
+  Invoke-Pester tests/powershell
+  ```
+  and lint with `Invoke-ScriptAnalyzer -Path <file> -Settings ./PSScriptAnalyzerSettings.psd1`, which
+  also checks the syntax works in Windows PowerShell 5.1.
+
 The fake server mirrors the bitwarden/server behaviors listed in section 5 (for example, group
 responses never include members, and PUT ignores `externalId`). A passing run proves the code is
 consistent with those behaviors, not that a live Bitwarden org behaves the same way.
 
 GitHub Actions runs these on every push and pull request (`.github/workflows/ci.yml`), together with
-`ruff`, `shellcheck setup.sh`, and a `docker build` that checks the image runs as a non-root user.
+`ruff`, `shellcheck`, and a `docker build` that checks the image runs as a non-root user. A Windows
+job runs the script tests, Pester and PSScriptAnalyzer in PowerShell 7 and Windows PowerShell 5.1.
+Both installers download the pushed commit for real (`install.sh` on Linux; `install.ps1` as a file
+and the way the README runs it, `irm | iex`) and update it in place.
 A weekly workflow (`.github/workflows/scim-drift.yml`) opens an issue when Bitwarden's SCIM code
 changes after the commit section 5 was verified against.
 
@@ -72,7 +96,7 @@ Create these test fixtures in Google:
 
 To deploy a test copy on Cloud Run, install it with the one-liner. While the repository is internal,
 use the `gh` form (after `gh auth login` with a `bitwarden-labs` account); `main` gets the latest
-unreleased code, or use a tag such as `v1.0.0`:
+unreleased code, or use a tag such as `v1.1.0`:
 
 ```bash
 BW_SYNC_REF=main bash <(gh api -H "Accept: application/vnd.github.raw" "repos/bitwarden-labs/bw-gws-scim-sync/contents/install.sh?ref=main")
@@ -214,6 +238,25 @@ Test these in a fresh project.
 | 41 | Tick a group that's in `DELETE_GROUPS` again | It's taken out of `DELETE_GROUPS`, and the next run recreates its Bitwarden group. A same-named group created by hand is never deleted: the plan warns `isn't linked to it`. |
 
 Step numbers are kept stable so earlier results stay comparable; new steps get the next free number.
+
+### Windows (PowerShell)
+
+On a Windows PC with only the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install#windows)
+installed (no Python, no Git Bash), signed in with `gcloud auth login`, and the
+[GitHub CLI](https://cli.github.com/) signed in with `gh auth login` while the repository is internal.
+Use **Windows PowerShell** (5.1, the blue one built into Windows) first, then repeat steps 43 to 47 in
+PowerShell 7. Use a test project and the test Workspace.
+
+| # | Do this | Expected result |
+|---|---|---|
+| 43 | Run the internal Windows one-liner from README Step 2 (with `$env:BW_SYNC_REF = 'main'` before a release) | Installs into `C:\Users\YOU\bw-gws-scim-sync` and starts `setup.ps1`. The prompts match the README table, and the key prompt hides what you type. It ends with the Client ID, the scopes, and the `select-groups.ps1` command. |
+| 44 | Run `setup.ps1` again with the command from README Step 2 | Every prompt shows the deployed value in brackets; Enter keeps each one. Enter at the key prompt prints `Keeping the stored key.` |
+| 45 | Run it again and type a new key | `gcloud secrets versions access latest --secret bw-scim-api-key` prints exactly that key: no extra line or space at the end. |
+| 46 | Run `select-groups.ps1`, toggle groups with numbers, try `/text` and `/`, then `s`, save, and accept the dry run | The list shows every group with member counts; the current ones are ticked. After saving, `gcloud run jobs describe bw-scim-sync --region R` shows the new `GOOGLE_GROUPS`. The dry run says it's running on Cloud Run and prints the plan within a minute. `DRY_RUN` on the job is unchanged afterwards (still `false` if it was). |
+| 47 | Untick a group and answer **y** to delete; then `select-groups.ps1 --protected-users` | `DELETE_GROUPS` holds the unticked group and the dry run shows `Delete   group NAME`. The users list leaves out suspended users and saves `PROTECTED_EMAILS`. |
+| 48 | A group or person with an accented name (for example `Señal`) | Shown correctly in the picker and in the dry-run plan. |
+| 49 | Run `.\setup.ps1` directly, without `-ExecutionPolicy Bypass` | On a PC with the default policy: `running scripts is disabled on this system`. The README command works. |
+| 50 | Run the public one-liner (`irm ... \| iex`) while the repository is internal, without `gh` | It says it couldn't download and suggests `gh auth login`, and the PowerShell window stays open. |
 
 ## 5. Bitwarden SCIM behavior to confirm
 

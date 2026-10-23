@@ -23,7 +23,7 @@ jobs:
         run: pip install -r requirements.txt ruff==0.17.0
       - name: Ruff
         run: ruff check src tests
-      - name: Unit tests (planner + SCIM client against a fake Bitwarden SCIM server)
+      - name: Unit tests (sync code, and the bash and PowerShell 7 scripts against a fake gcloud)
         run: python -m unittest discover -s tests -t . -v
 
   shellcheck:
@@ -32,6 +32,92 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: shellcheck setup.sh select-groups.sh install.sh
+      - name: PowerShell files are plain ASCII (Windows PowerShell 5.1 misreads other characters)
+        run: |
+          if LC_ALL=C grep -nP '[^\x20-\x7E\t]' ./*.ps1 powershell/*.ps1 tests/powershell/*.ps1; then
+            echo "Replace the characters above with ASCII."; exit 1
+          fi
+
+  install-sh:
+    name: install.sh downloads this commit
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }} # the repository isn't public, so the installer falls back to gh
+      BW_SYNC_REF: ${{ github.sha }}
+      BW_SYNC_SKIP_SETUP: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install, then update in place (keeping .venv)
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && printf '#!/bin/sh\nexit 0\n' > "$RUNNER_TEMP/bin/gcloud" && chmod +x "$RUNNER_TEMP/bin/gcloud"
+          export PATH="$RUNNER_TEMP/bin:$PATH" BW_SYNC_DIR="$RUNNER_TEMP/sync"
+          bash install.sh
+          test -f "$BW_SYNC_DIR/setup.sh" && test -f "$BW_SYNC_DIR/setup.ps1"
+          mkdir "$BW_SYNC_DIR/.venv" && touch "$BW_SYNC_DIR/.venv/marker"
+          bash install.sh | tee out.txt
+          grep -q "Updated $BW_SYNC_DIR" out.txt && test -f "$BW_SYNC_DIR/.venv/marker"
+
+  windows:
+    name: Windows (PowerShell 5.1 and 7)
+    runs-on: windows-2025
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BW_SYNC_REF: ${{ github.sha }}
+      BW_SYNC_SKIP_SETUP: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        shell: pwsh
+        run: pip install -r requirements.txt
+      - name: setup.ps1 and select-groups.ps1 make the same gcloud calls as the bash scripts (fake gcloud.cmd)
+        shell: pwsh
+        run: python -m unittest tests.test_scripts -v
+      - name: Pester and PSScriptAnalyzer (PowerShell 7)
+        shell: pwsh
+        run: |
+          Install-Module Pester -RequiredVersion 5.7.1 -Force -SkipPublisherCheck -Scope CurrentUser
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force -Scope CurrentUser
+          Import-Module Pester -RequiredVersion 5.7.1
+          Invoke-Pester -Path tests/powershell -CI
+          $issues = Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            Invoke-ScriptAnalyzer -Path $_.FullName -Settings ./PSScriptAnalyzerSettings.psd1 }
+          $issues | Format-Table -AutoSize | Out-String -Width 200
+          if ($issues) { throw "PSScriptAnalyzer found $(@($issues).Count) issue(s)" }
+      - name: Pester (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser | Out-Null
+          Install-Module Pester -RequiredVersion 5.7.1 -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -RequiredVersion 5.7.1
+          Invoke-Pester -Path tests/powershell -CI
+      - name: install.ps1 downloads this commit (PowerShell 7, as a file; then updates, keeping .venv)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory "$env:RUNNER_TEMP\bin" -Force | Out-Null
+          Set-Content "$env:RUNNER_TEMP\bin\gcloud.cmd" '@exit /b 0'
+          $env:PATH = "$env:RUNNER_TEMP\bin;$env:PATH"
+          $env:BW_SYNC_DIR = "$env:RUNNER_TEMP\sync-pwsh"
+          pwsh -NoProfile -File install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 failed" }
+          if (-not (Test-Path "$env:BW_SYNC_DIR\setup.ps1")) { throw 'setup.ps1 missing' }
+          New-Item -ItemType Directory "$env:BW_SYNC_DIR\.venv" | Out-Null
+          New-Item -ItemType File "$env:BW_SYNC_DIR\.venv\marker" | Out-Null
+          $out = pwsh -NoProfile -File install.ps1 | Out-String
+          if ($out -notmatch 'Updated') { throw "expected an update: $out" }
+          if (-not (Test-Path "$env:BW_SYNC_DIR\.venv\marker")) { throw '.venv was not kept' }
+      - name: install.ps1 the way the README runs it (Windows PowerShell 5.1, irm | iex)
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory "$env:RUNNER_TEMP\bin" -Force | Out-Null
+          Set-Content "$env:RUNNER_TEMP\bin\gcloud.cmd" '@exit /b 0'
+          $env:PATH = "$env:RUNNER_TEMP\bin;$env:PATH"
+          $env:BW_SYNC_DIR = "$env:RUNNER_TEMP\sync-ps51"
+          Get-Content -Raw install.ps1 | Invoke-Expression
+          if (-not (Test-Path "$env:BW_SYNC_DIR\setup.ps1")) { throw 'install.ps1 did not install' }
 
   docker:
     name: Container build

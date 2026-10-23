@@ -2,3 +2,5 @@
 __pycache__/
 .env*
 *.json
+# Test expectations (recorded gcloud calls), not keys
+!tests/golden/*.json

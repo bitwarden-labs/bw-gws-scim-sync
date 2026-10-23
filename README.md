@@ -112,7 +112,7 @@ each change by hand, follow [docs/MANUAL_SETUP.md](docs/MANUAL_SETUP.md) instead
 2. Paste this command and press **Enter**. It downloads the tool into `~/bw-gws-scim-sync` and starts
    the setup script:
    ```
-   bash <(curl -fsSL https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.0.0/install.sh)
+   bash <(curl -fsSL https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.1.0/install.sh)
    ```
 3. Answer the prompts. Press **Enter** to accept a value shown in brackets.
 
@@ -120,7 +120,7 @@ each change by hand, follow [docs/MANUAL_SETUP.md](docs/MANUAL_SETUP.md) instead
 > `404`. Sign in to GitHub once with `gh auth login`, using an account in the `bitwarden-labs`
 > organization, then use this command in step 2 instead:
 > ```
-> bash <(gh api -H "Accept: application/vnd.github.raw" "repos/bitwarden-labs/bw-gws-scim-sync/contents/install.sh?ref=v1.0.0")
+> bash <(gh api -H "Accept: application/vnd.github.raw" "repos/bitwarden-labs/bw-gws-scim-sync/contents/install.sh?ref=v1.1.0")
 > ```
 > To test the latest unreleased code, use `main` instead of a version:
 > ```
@@ -133,12 +133,49 @@ You can also run the command in your own terminal instead of Cloud Shell, if it 
 `gcloud auth login` and `gcloud auth application-default login` (`select-groups.sh` uses the second).
 These sign-ins expire from time to time; the scripts tell you which one to renew.
 
+### On Windows, without Cloud Shell
+
+Cloud Shell runs in any browser, so the steps above work on Windows too. To run the setup on your
+Windows PC instead, use the PowerShell version. It needs only the Google Cloud CLI: no Python, no
+bash. It works in Windows PowerShell 5.1 (built into Windows) and PowerShell 7.
+
+1. Install the [Google Cloud CLI for Windows](https://cloud.google.com/sdk/docs/install#windows).
+   Then open **PowerShell** and sign in:
+   ```powershell
+   gcloud auth login
+   ```
+2. Paste this command and press **Enter**. It downloads the tool into your user folder
+   (`C:\Users\YOU\bw-gws-scim-sync`) and starts `setup.ps1`, which asks the questions in the table
+   below:
+   ```powershell
+   irm https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.1.0/install.ps1 | iex
+   ```
+3. Answer the prompts. Press **Enter** to accept a value shown in brackets.
+
+> **Bitwarden internal testing (while the repository isn't public):** sign in to GitHub once with
+> `gh auth login` ([GitHub CLI](https://cli.github.com/)), using an account in the `bitwarden-labs`
+> organization, then use this command in step 2 instead:
+> ```powershell
+> gh api -H "Accept: application/vnd.github.raw" "repos/bitwarden-labs/bw-gws-scim-sync/contents/install.ps1?ref=v1.1.0" | Out-String | iex
+> ```
+> To test the latest unreleased code:
+> ```powershell
+> $env:BW_SYNC_REF = 'main'; gh api -H "Accept: application/vnd.github.raw" "repos/bitwarden-labs/bw-gws-scim-sync/contents/install.ps1?ref=main" | Out-String | iex
+> ```
+
+To run a script again later, for example to change a setting, start it like this. `-ExecutionPolicy
+Bypass` lets Windows run the downloaded script this once, without changing your settings:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File $HOME\bw-gws-scim-sync\setup.ps1
+```
+
 <details>
 <summary>Other ways to get the tool</summary>
 
 - **Read the installer before running it.** Download it, read it, then run it:
   ```
-  curl -fsSLO https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.0.0/install.sh
+  curl -fsSLO https://raw.githubusercontent.com/bitwarden-labs/bw-gws-scim-sync/v1.1.0/install.sh
   less install.sh
   bash install.sh
   ```
@@ -216,6 +253,12 @@ cd ~/bw-gws-scim-sync
 bash select-groups.sh
 ```
 
+On Windows (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File $HOME\bw-gws-scim-sync\select-groups.ps1
+```
+
 1. Press **Enter** to confirm your project. The script finds the job's region by itself (if the job
    exists in more than one region, it asks you to pick one).
 2. The script lists every group in your Google Workspace, with its number of direct members (a
@@ -234,6 +277,11 @@ it's waiting for permission, that's normal for a minute or two.
 
 If the arrow keys don't work in your terminal, the script falls back to a numbered list: type the
 numbers to select (for example `1,3,5-7`), `/text` to filter, and `s` to save.
+
+On Windows, `select-groups.ps1` works the same way, with two differences. The list is always the
+numbered one. And the dry run runs on Cloud Run: the script starts the job once with `DRY_RUN=true`
+for that run only (your saved settings don't change), waits for it, usually under a minute, and
+shows the plan from its log. It installs nothing on your PC.
 
 You can run `select-groups.sh` again at any time to change the groups. When you untick a group, it
 asks whether to delete its Bitwarden group as well; see

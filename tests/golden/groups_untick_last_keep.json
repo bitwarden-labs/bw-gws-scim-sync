@@ -1,0 +1,88 @@
+{
+ "calls": [
+  {
+   "words": [
+    "config",
+    "get-value",
+    "account"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "auth",
+    "print-access-token"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "auth",
+    "application-default",
+    "print-access-token"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "config",
+    "get-value",
+    "project"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "config",
+    "set",
+    "project",
+    "test-proj"
+   ],
+   "options": {}
+  },
+  {
+   "words": [
+    "run",
+    "jobs",
+    "list"
+   ],
+   "options": {
+    "--filter": "metadata.name=bw-scim-sync",
+    "--format": "value(region)"
+   }
+  },
+  {
+   "words": [
+    "run",
+    "jobs",
+    "describe",
+    "bw-scim-sync"
+   ],
+   "options": {
+    "--format": "json",
+    "--region": "europe-west1"
+   }
+  },
+  {
+   "words": [
+    "iam",
+    "service-accounts",
+    "add-iam-policy-binding",
+    "bw-scim-sync@test-proj.iam.gserviceaccount.com"
+   ],
+   "options": {
+    "--member": "user:admin@acme.com",
+    "--role": "roles/iam.serviceAccountTokenCreator"
+   }
+  }
+ ],
+ "python": [
+  {
+   "picker": {
+    "kind": "groups",
+    "current": "eng@acme.com,fin@acme.com",
+    "title": "Google groups to sync"
+   }
+  }
+ ]
+}
