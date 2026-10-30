@@ -171,6 +171,35 @@ powershell -ExecutionPolicy Bypass -File $HOME\bw-gws-scim-sync\setup.ps1
 ```
 
 <details>
+<summary>The Google Cloud CLI install fails with <code>CERTIFICATE_VERIFY_FAILED</code></summary>
+
+If the installer stops at "Installing components" and the log shows `certificate verify failed:
+unable to get local issuer certificate`, something on the PC is inspecting HTTPS traffic: antivirus
+web scanning, a corporate proxy, or a tool such as Zscaler. Windows trusts that tool's certificate,
+but the Google Cloud CLI doesn't use the Windows certificate store.
+
+To check, run this. If the result isn't Google Trust Services, that tool is the cause:
+
+```powershell
+$r=[Net.HttpWebRequest]::Create("https://dl.google.com"); $r.GetResponse().Close(); $r.ServicePoint.Certificate.Issuer
+```
+
+Either ask your IT team to exclude `dl.google.com` and `*.googleapis.com` from inspection, or give
+the Google Cloud CLI a copy of the Windows certificates and finish the install:
+
+```powershell
+mkdir C:\certs -Force | Out-Null
+Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root | ForEach-Object {
+  "-----BEGIN CERTIFICATE-----"; [Convert]::ToBase64String($_.RawData,'InsertLineBreaks'); "-----END CERTIFICATE-----"
+} | Set-Content -Encoding ascii C:\certs\windows-roots.pem
+$sdk="C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk"
+& "$sdk\bin\gcloud.cmd" config set core/custom_ca_certs_file C:\certs\windows-roots.pem
+& "$sdk\install.bat"
+```
+
+</details>
+
+<details>
 <summary>Other ways to get the tool</summary>
 
 - **Read the installer before running it.** Download it, read it, then run it:
