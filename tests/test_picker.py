@@ -49,6 +49,11 @@ class PickerTests(unittest.TestCase):
         self.assertEqual(result, {"fin@acme.com"})
         self.assertTrue(any("(filter: fin)" in line for line in out))
 
+    def test_pick_plain_empty_line_does_not_reprint_the_list(self):
+        out = []
+        self.assertIsNone(pick_plain("t", ITEMS, set(), read=scripted("", "  ", "q"), write=out.append))
+        self.assertEqual(sum(line == "\nt" for line in out), 1)
+
     def test_pick_plain_rejects_bad_input_and_cancels(self):
         out = []
         self.assertIsNone(pick_plain("t", ITEMS, set(), read=scripted("9", "q"), write=out.append))

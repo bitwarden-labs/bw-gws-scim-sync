@@ -174,6 +174,14 @@ Describe 'Picker' {
         $result = Show-Picker -Title 'T' -Items $script:items -Selected @('eng@acme.com', 'fin@acme.com')
         $result | Should -Be @('fin@acme.com', 'mkt@acme.com')
     }
+    It 'asks again on an empty line without printing the list again' {
+        Mock Write-Host {}
+        $script:answers = [System.Collections.Generic.Queue[string]]::new([string[]]@('', '  ', 'q'))
+        Mock Read-Host { $script:answers.Dequeue() }
+        Show-Picker -Title 'T' -Items $script:items -Selected @() | Should -BeNullOrEmpty
+        Should -Invoke Write-Host -Times 1 -Exactly -ParameterFilter { $Object -eq "`nT" }
+        Should -Invoke Read-Host -Times 3 -Exactly
+    }
     It 'returns $null when cancelled or when input runs out' {
         Mock Write-Host {}
         Mock Read-Host { 'q' }

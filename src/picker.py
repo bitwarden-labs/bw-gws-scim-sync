@@ -81,10 +81,12 @@ def pick_plain(title, items, selected, read=input, write=print) -> set[str] | No
             write(f"  {n:3}  {format_row(item, chosen, key_width)}")
         write(f"{len(chosen)} selected. Type numbers to select or unselect (for example 1,3,5-7), "
               "/text to filter, / to clear the filter, s to save, q to cancel.")
-        try:
-            answer = read("> ").strip()
-        except EOFError:
-            return None
+        answer = ""
+        while not answer:  # an empty line asks again without printing the list again
+            try:
+                answer = read("> ").strip()
+            except EOFError:
+                return None
         if answer.lower() == "s":
             return chosen
         if answer.lower() == "q":

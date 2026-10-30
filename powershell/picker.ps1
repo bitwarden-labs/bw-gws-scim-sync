@@ -185,13 +185,15 @@ function Show-Picker {
         }
         Write-Host ("$($chosen.Count) selected. Type numbers to select or unselect (for example 1,3,5-7), " +
             '/text to filter, / to clear the filter, s to save, q to cancel.')
-        $answer = Read-Host '>'
-        if ($null -eq $answer) { return $null }  # end of input
-        $answer = $answer.Trim()
-        if (-not $answer -and [Console]::IsInputRedirected) {
-            $empty++
-            if ($empty -ge 20) { return $null }  # input ran out (Windows PowerShell returns '' there)
-        }
+        do {  # an empty line asks again without printing the list again
+            $answer = Read-Host '>'
+            if ($null -eq $answer) { return $null }  # end of input
+            $answer = $answer.Trim()
+            if (-not $answer -and [Console]::IsInputRedirected) {
+                $empty++
+                if ($empty -ge 20) { return $null }  # input ran out (Windows PowerShell returns '' there)
+            }
+        } while (-not $answer)
         if ($answer -eq 's') { return , @($Items | Where-Object { $chosen.Contains($_.Key) } | ForEach-Object { $_.Key }) }
         if ($answer -eq 'q') { return $null }
         if ($answer.StartsWith('/')) {
